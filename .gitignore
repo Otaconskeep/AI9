@@ -1,0 +1,17 @@
+# Model weights -- large binaries from third-party sources, download per README
+backend/networks/*.pt
+backend/networks/*.zip
+backend/denoising/models/*.pth
+models/
+
+# Runtime state -- never commit
+cache/
+logs/
+venv/
+__pycache__/
+*.pyc
+
+# Local test artifacts
+test-images/
+_ff_headless_profile/
+_tools/

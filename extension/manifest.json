@@ -1,0 +1,54 @@
+{
+  "name": "Manga Colorizer (AI9)",
+  "version": "0.5.0",
+  "description": "Automatic local-GPU manga colorization for Crunchyroll Manga and other reader sites, backed by AI9's RTX 5070 Ti.",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": [
+    "https://www.crunchyroll.com/*",
+    "https://crunchyroll.com/*",
+    "*://mangadex.org/*",
+    "*://senkuro.com/*",
+    "*://chapmanganelo.com/*",
+    "*://fanfox.net/*",
+    "*://mangakakalot.com/*",
+    "*://readmanga.io/*",
+    "*://manhuatop.org/*",
+    "*://manhuaus.com/*",
+    "https://127.0.0.1/*",
+    "https://192.168.50.162/*"
+  ],
+  "optional_host_permissions": ["*://*/*"],
+
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://www.crunchyroll.com/*",
+        "https://crunchyroll.com/*",
+        "*://mangadex.org/*",
+        "*://senkuro.com/*",
+        "*://chapmanganelo.com/*",
+        "*://fanfox.net/*",
+        "*://mangakakalot.com/*",
+        "*://readmanga.io/*",
+        "*://manhuatop.org/*",
+        "*://manhuaus.com/*"
+      ],
+      "resources": ["siteConfig.json"]
+    }
+  ],
+
+  "action": {
+    "default_icon": {
+      "16": "assets/ext-icon.png",
+      "24": "assets/ext-icon.png",
+      "32": "assets/ext-icon.png"
+    },
+    "default_title": "Manga Colorizer",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "manifest_version": 3
+}
