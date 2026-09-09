@@ -199,6 +199,15 @@ function saveAdjustments(values, presetName) {
     activePresetLabel.textContent = `Active: ${presetName}`;
     presetSelect.value = presetName in presetsData ? presetName : "";
     browser.storage.local.set({ adjustments: values, activePreset: presetName });
+
+    // Re-color anything already colorized on the active tab with the new
+    // values -- without this, switching presets does nothing visible on a
+    // page you've already read (colorizeMangaEventHandler intentionally
+    // skips already-processed images; reapplyAdjustments is the dedicated
+    // "redo existing work" path for that case).
+    browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) browser.tabs.sendMessage(tabs[0].id, { action: 'reapplyAdjustments' });
+    });
 }
 
 fetch(browser.runtime.getURL('presets.json'))

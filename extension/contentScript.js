@@ -334,6 +334,12 @@ if (window.injectedMC !== 1) {
     // an untouched original alongside the colorized version without a second
     // hidden canvas -- colorization happens in place. showOriginal/showColorized
     // toggling therefore does not apply to canvas-rendered pages.
+    //
+    // canvasOriginalSnapshots preserves the pre-colorization pixels (captured
+    // right before the first colorize request) so that changing a color
+    // preset/slider later can re-derive from the true original instead of
+    // re-processing an already-colorized canvas -- see reapplyToCanvas().
+    const canvasOriginalSnapshots = new WeakMap();
     let canvasNameCounter = 0;
 
     async function fetchColorizedCanvas(index, url, options, canvas, canvasName) {
@@ -410,6 +416,9 @@ if (window.injectedMC !== 1) {
                 activeFetches -= 1;
                 canvas.removeAttribute('data-is-processed');
                 return 0;
+            }
+            if (!canvasOriginalSnapshots.has(canvas)) {
+                canvasOriginalSnapshots.set(canvas, imgData);  // pre-colorization pixels, for later re-adjustment
             }
 
             const postData = {
@@ -735,6 +744,130 @@ if (window.injectedMC !== 1) {
         }
     }
 
+    // ---- Re-apply color adjustments to already-colorized pages ----
+    // Changing a preset/slider previously did nothing on a page that was
+    // already colorized: colorizeMangaEventHandler skips anything with
+    // data-is-processed=true, by design (it's a "find new work" scan, not a
+    // "redo existing work" one). This is the dedicated "redo existing work"
+    // path, triggered by popup.js on every adjustment change. It re-derives
+    // from the preserved ORIGINAL pixels (the hidden clone for <img>, the
+    // WeakMap snapshot for <canvas>) rather than the currently-displayed
+    // colorized image, and reuses the same mangaTitle/mangaChapter so the
+    // request lands on the server's raw-GPU-output cache tier and skips the
+    // model entirely -- only the cheap adjustment step re-runs.
+    function getMangaProps() {
+        const site = siteConfigurations && Object.keys(siteConfigurations).find(s => window.location.hostname.includes(s));
+        const config = site ? siteConfigurations[site] : null;
+        return {
+            title: site ? parseQuery(config.titleQuery) : '',
+            chapter: site ? parseQuery(config.chapterQuery) : '',
+            altText: site ? config.useAltTextAsImageName : false,
+        };
+    }
+
+    function reapplyToImg(liveImg, cloneImg) {
+        let imgContext;
+        try {
+            imgContext = canvasContextFromImg(cloneImg);
+        } catch (e) {
+            console.log('[MC] Reapply (img): cannot read original pixels:', e);
+            return Promise.resolve();
+        }
+        const mangaProps = getMangaProps();
+        const isAnimated = liveImg.src.includes('animation');
+        const postData = {
+            imgName: liveImg.alt || 'reapply',
+            imgWidth: cloneImg.width || liveImg.width,
+            imgHeight: cloneImg.height || liveImg.height,
+            cache: cache && !isAnimated,
+            denoise: denoise,
+            colorize: colorize,
+            upscale: upscale && !isAnimated,
+            denoiseSigma: Number(denoiseSigma),
+            upscaleFactor: Number(upscaleFactor),
+            mangaTitle: mangaProps.title,
+            mangaChapter: mangaProps.chapter,
+            adjustments: adjustments,
+            imgData: imgContext.canvas.toDataURL("image/png"),
+        };
+        const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(postData) };
+        return fetch(new URL('colorize-image-data', apiURL).toString(), options)
+            .then(response => response.ok ? response.json() : response.text().then(t => { throw t }))
+            .then(json => {
+                if (json.colorImgData) {
+                    liveImg.src = json.colorImgData;
+                    console.log('[MC] Reapplied adjustments to image');
+                } else if (json.msg) {
+                    console.log('[MC] Reapply (img) message:', json.msg);
+                }
+            })
+            .catch(err => console.log('[MC] Reapply (img) error:', err));
+    }
+
+    function reapplyToCanvas(canvas, originalDataUrl) {
+        const mangaProps = getMangaProps();
+        const postData = {
+            imgName: canvas.dataset.mcName || 'reapply-canvas',
+            imgData: originalDataUrl,
+            imgWidth: canvas.width,
+            imgHeight: canvas.height,
+            cache: cache,
+            denoise: denoise,
+            colorize: colorize,
+            upscale: upscale,
+            denoiseSigma: Number(denoiseSigma),
+            upscaleFactor: Number(upscaleFactor),
+            mangaTitle: mangaProps.title,
+            mangaChapter: mangaProps.chapter,
+            adjustments: adjustments,
+        };
+        const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(postData) };
+        return fetch(new URL('colorize-image-data', apiURL).toString(), options)
+            .then(response => response.ok ? response.json() : response.text().then(t => { throw t }))
+            .then(json => {
+                if (json.colorImgData) {
+                    const resultImg = new Image();
+                    resultImg.onload = () => {
+                        const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(resultImg, 0, 0, canvas.width, canvas.height);
+                        canvas.dataset.mcFingerprint = canvasFingerprint(canvas) || '';
+                    };
+                    resultImg.src = json.colorImgData;
+                    console.log('[MC] Reapplied adjustments to canvas');
+                } else if (json.msg) {
+                    console.log('[MC] Reapply (canvas) message:', json.msg);
+                }
+            })
+            .catch(err => console.log('[MC] Reapply (canvas) error:', err));
+    }
+
+    let reapplyQueue = [];
+
+    function processReapplyQueue() {
+        while (reapplyQueue.length > 0 && activeFetches < maxActiveFetches) {
+            const item = reapplyQueue.shift();
+            activeFetches += 1;
+            const done = () => { activeFetches -= 1; processReapplyQueue(); };
+            (item.type === 'img' ? reapplyToImg(item.live, item.source) : reapplyToCanvas(item.live, item.source)).finally(done);
+        }
+    }
+
+    function reapplyAdjustments() {
+        if (!apiURL) return;
+        reapplyQueue = [];
+        document.querySelectorAll('img[data-is-colored="true"]:not([data-is-cloned])').forEach((liveImg) => {
+            const cloneImg = liveImg.nextElementSibling;
+            if (cloneImg && cloneImg.dataset.isCloned) reapplyQueue.push({ type: 'img', live: liveImg, source: cloneImg });
+        });
+        document.querySelectorAll('canvas[data-is-colored="true"]').forEach((canvas) => {
+            const original = canvasOriginalSnapshots.get(canvas);
+            if (original) reapplyQueue.push({ type: 'canvas', live: canvas, source: original });
+        });
+        console.log(`[MC] Re-applying adjustments to ${reapplyQueue.length} already-colorized element(s)`);
+        processReapplyQueue();
+    }
+
     function toggleImageVisibility(showOriginal, showColorized) {
         const coloredImages = document.querySelectorAll('img[data-is-colored="true"][data-in-view="true"]');
         const clonedImages = document.querySelectorAll('img[data-is-cloned="true"][data-in-view="true"]');
@@ -760,6 +893,23 @@ if (window.injectedMC !== 1) {
         if(request.action === 'startSelectMode') {
             console.log('[MC] Entered select mode')
             enterSelectMode();
+        }
+        if (request.action === 'reapplyAdjustments') {
+            // Refresh from storage rather than trusting module-level vars --
+            // popup.js just wrote new values and this can fire before any
+            // full colorizeMangaEventHandler scan has refreshed them.
+            browser.storage.local.get(["apiURL", "cache", "denoise", "colorize", "upscale",
+                "denoiseSigma", "upscaleFactor", "adjustments"], (result) => {
+                apiURL = result.apiURL;
+                cache = result.cache;
+                denoise = result.denoise;
+                colorize = result.colorize;
+                upscale = result.upscale;
+                denoiseSigma = result.denoiseSigma || "25";
+                upscaleFactor = result.upscaleFactor || "4";
+                adjustments = result.adjustments || null;
+                reapplyAdjustments();
+            });
         }
         sendResponse({status: 'done'});
     });
