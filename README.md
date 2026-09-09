@@ -1,4 +1,6 @@
-# Manga Colorizer — Local GPU Auto-Colorization for Firefox
+# AI9 — Local GPU Manga Auto-Colorization for Firefox
+
+**Designed by Antonio Garcia.**
 
 Automatically colorizes black-and-white manga pages as you read them in Firefox,
 using a **local GPU** (no cloud API, no per-page clicking, no upload step).
@@ -329,6 +331,10 @@ concurrency (`maxActiveFetches`) 1.
 
 ## Credits
 
+- **Antonio Garcia** — designed this deployment: the GPU/CUDA compatibility
+  work, the Windows venv + Scheduled Task service architecture, the caching
+  and idle-VRAM design, and the Firefox extension patches (canvas support,
+  least-privilege permissions, SPA detection) described in this guide.
 - [gilgamesh117/Manga-Colorizer](https://github.com/gilgamesh117/Manga-Colorizer) —
   base project this guide patches (MIT license, see [LICENSE](LICENSE)).
 - [qweasdd/manga-colorization-v2](https://github.com/qweasdd/manga-colorization-v2) —
