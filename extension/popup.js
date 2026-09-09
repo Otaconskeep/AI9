@@ -138,3 +138,103 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
 showOriginalCheckbox.addEventListener('change', updateVisibility);
 showColorizedCheckbox.addEventListener('change', updateVisibility);
 
+// ---- Color adjustment presets/sliders ----
+// Keys and defaults mirror backend/color_adjust.py's DEFAULT_ADJUSTMENTS --
+// keep both in sync if either changes.
+const ADJUSTMENT_KEYS = ["saturation", "contrast", "brightness", "gamma", "warmth",
+    "hueShift", "shadowTintStrength", "magentaReduction", "skinToneWarmth",
+    "blackLevel", "highlightSoftness"];
+const DEFAULT_ADJUSTMENTS = {
+    saturation: 1.0, contrast: 1.0, brightness: 0.0, gamma: 1.0, warmth: 0.0,
+    hueShift: 0, shadowTintStrength: 0.0, magentaReduction: 0.0,
+    skinToneWarmth: 0.0, blackLevel: 0.0, highlightSoftness: 0.0,
+};
+
+const presetSelect = document.getElementById("preset-select");
+const activePresetLabel = document.getElementById("active-preset-label");
+const resetAdjustmentsButton = document.getElementById("reset-adjustments");
+const adjustmentSliders = {};
+ADJUSTMENT_KEYS.forEach((key) => {
+    adjustmentSliders[key] = {
+        input: document.getElementById(`adj-${key}`),
+        display: document.getElementById(`adj-${key}-value`),
+    };
+});
+
+let presetsData = { "Default": DEFAULT_ADJUSTMENTS };
+let suppressAdjustmentSave = false;  // avoid feedback loop while programmatically setting sliders
+
+function formatAdjustmentValue(key, value) {
+    return key === "hueShift" ? String(Math.round(value)) : Number(value).toFixed(2);
+}
+
+function setSlidersFromValues(values) {
+    suppressAdjustmentSave = true;
+    ADJUSTMENT_KEYS.forEach((key) => {
+        const value = values[key] !== undefined ? values[key] : DEFAULT_ADJUSTMENTS[key];
+        adjustmentSliders[key].input.value = value;
+        adjustmentSliders[key].display.textContent = formatAdjustmentValue(key, value);
+    });
+    suppressAdjustmentSave = false;
+}
+
+function currentSliderValues() {
+    const values = {};
+    ADJUSTMENT_KEYS.forEach((key) => {
+        values[key] = Number(adjustmentSliders[key].input.value);
+    });
+    return values;
+}
+
+function findMatchingPresetName(values) {
+    for (const [name, presetValues] of Object.entries(presetsData)) {
+        const matches = ADJUSTMENT_KEYS.every((key) =>
+            Math.abs((presetValues[key] ?? DEFAULT_ADJUSTMENTS[key]) - values[key]) < 0.001);
+        if (matches) return name;
+    }
+    return "Custom";
+}
+
+function saveAdjustments(values, presetName) {
+    activePresetLabel.textContent = `Active: ${presetName}`;
+    presetSelect.value = presetName in presetsData ? presetName : "";
+    browser.storage.local.set({ adjustments: values, activePreset: presetName });
+}
+
+fetch(browser.runtime.getURL('presets.json'))
+    .then((response) => response.json())
+    .then((loadedPresets) => {
+        presetsData = loadedPresets;
+        return browser.storage.local.get(["adjustments", "activePreset"]);
+    })
+    .then((result) => {
+        const values = result.adjustments || presetsData["Default"] || DEFAULT_ADJUSTMENTS;
+        const presetName = result.activePreset || findMatchingPresetName(values);
+        setSlidersFromValues(values);
+        activePresetLabel.textContent = `Active: ${presetName}`;
+        if (presetName in presetsData) presetSelect.value = presetName;
+    })
+    .catch((err) => console.error('[MC] Failed to load color presets:', err));
+
+presetSelect.addEventListener('change', () => {
+    const preset = presetsData[presetSelect.value];
+    if (!preset) return;
+    setSlidersFromValues(preset);
+    saveAdjustments(currentSliderValues(), presetSelect.value);
+});
+
+ADJUSTMENT_KEYS.forEach((key) => {
+    adjustmentSliders[key].input.addEventListener('input', () => {
+        if (suppressAdjustmentSave) return;
+        adjustmentSliders[key].display.textContent = formatAdjustmentValue(key, adjustmentSliders[key].input.value);
+        const values = currentSliderValues();
+        saveAdjustments(values, findMatchingPresetName(values));
+    });
+});
+
+resetAdjustmentsButton.addEventListener('click', () => {
+    const defaults = presetsData["Default"] || DEFAULT_ADJUSTMENTS;
+    setSlidersFromValues(defaults);
+    saveAdjustments(currentSliderValues(), "Default");
+});
+

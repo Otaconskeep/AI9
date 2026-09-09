@@ -66,6 +66,84 @@
       <input class="text-input" type="number" min="0" max="255" id="colorstride-input-field" title="Skip this many
         pixels at edges and between pixels when checking for color" />
     </div>
+    <hr />
+    <div class="settings-container">
+      <label class="setting-label" for="preset-select">Color Preset</label>
+      <select class="text-input" id="preset-select">
+        <option>Default</option>
+        <option>Neutral</option>
+        <option>Soft Anime</option>
+        <option>Warm</option>
+        <option>Cool</option>
+        <option>Night Scene</option>
+        <option>Reduced Purple Cast</option>
+        <option>Lower Contrast</option>
+        <option>Vivid</option>
+        <option>Manga Safe / Text Safe</option>
+      </select>
+    </div>
+    <div class="settings-container">
+      <span id="active-preset-label" class="setting-label">Active: Default</span>
+      <button id="reset-adjustments" title="Restore default sliders and Default preset">Reset</button>
+    </div>
+    <div id="adjustments-container">
+      <div class="settings-container">
+        <label class="setting-label" for="adj-saturation">Saturation</label>
+        <input class="slider-input" type="range" id="adj-saturation" min="0" max="2" step="0.05">
+        <span class="value-label" id="adj-saturation-value">1.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-contrast">Contrast</label>
+        <input class="slider-input" type="range" id="adj-contrast" min="0.5" max="1.8" step="0.05">
+        <span class="value-label" id="adj-contrast-value">1.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-brightness">Brightness</label>
+        <input class="slider-input" type="range" id="adj-brightness" min="-0.3" max="0.3" step="0.01">
+        <span class="value-label" id="adj-brightness-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-gamma">Gamma</label>
+        <input class="slider-input" type="range" id="adj-gamma" min="0.5" max="2.2" step="0.05">
+        <span class="value-label" id="adj-gamma-value">1.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-warmth">Warmth</label>
+        <input class="slider-input" type="range" id="adj-warmth" min="-1" max="1" step="0.05">
+        <span class="value-label" id="adj-warmth-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-hueShift">Hue Shift</label>
+        <input class="slider-input" type="range" id="adj-hueShift" min="-30" max="30" step="1">
+        <span class="value-label" id="adj-hueShift-value">0</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-shadowTintStrength">Shadow Tint Reduction</label>
+        <input class="slider-input" type="range" id="adj-shadowTintStrength" min="0" max="1" step="0.05">
+        <span class="value-label" id="adj-shadowTintStrength-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-magentaReduction">Magenta/Purple Reduction</label>
+        <input class="slider-input" type="range" id="adj-magentaReduction" min="0" max="1" step="0.05">
+        <span class="value-label" id="adj-magentaReduction-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-skinToneWarmth">Skin Tone Warmth</label>
+        <input class="slider-input" type="range" id="adj-skinToneWarmth" min="-1" max="1" step="0.05">
+        <span class="value-label" id="adj-skinToneWarmth-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-blackLevel">Black Level</label>
+        <input class="slider-input" type="range" id="adj-blackLevel" min="-0.2" max="0.2" step="0.01">
+        <span class="value-label" id="adj-blackLevel-value">0.00</span>
+      </div>
+      <div class="settings-container">
+        <label class="setting-label" for="adj-highlightSoftness">Highlight Softness</label>
+        <input class="slider-input" type="range" id="adj-highlightSoftness" min="0" max="1" step="0.05">
+        <span class="value-label" id="adj-highlightSoftness-value">0.00</span>
+      </div>
+    </div>
+    <hr />
     <div class="settings-container">
       <label class="setting-label" for="websites-input-field">Manga Sites</label>
       <textarea class="text-input" id="websites-input-field" rows="5" cols="25" wrap="hard" spellcheck="false"></textarea>

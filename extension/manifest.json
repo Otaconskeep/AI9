@@ -1,6 +1,6 @@
 {
   "name": "Manga Colorizer (AI9)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Automatic local-GPU manga colorization for Crunchyroll Manga and other reader sites, backed by AI9's RTX 5070 Ti.",
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
