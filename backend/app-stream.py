@@ -18,11 +18,12 @@ import numpy as np
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 
+import color_adjust
 from denoisator import MangaDenoiser
 from colorizator import MangaColorizator
 from upscalator import MangaUpscaler
 from utils.utils import distance_from_grayscale, generate_random_id, \
-    image_to_base64, load_image_as_base64, save_image, sanitize_string, clear_torch_cache
+    load_image_as_base64, save_image, sanitize_string, clear_torch_cache
 
 
 app = Flask(__name__)
@@ -63,6 +64,7 @@ def colorize_image_data():
         cache = req_json.get('cache', False)
         manga_title = req_json.get('mangaTitle', '')
         manga_chapter = req_json.get('mangaChapter', '')
+        adjustments = color_adjust.normalize_adjustments(req_json.get('adjustments'))
 
         if denoise_sigma < 0:
             print(f'[-] [{rid}] Denoiser sigma ({denoise_sigma}) cannot be negative, using default')
@@ -92,61 +94,89 @@ def colorize_image_data():
             return jsonify({'msg': f'Image: {img_name}, Error: {msg}'})
 
         content_hash = hashlib.sha256(orig_image_binary).hexdigest()[:32]
+        model_opts = options_fingerprint(colorize, upscale, denoise, denoise_sigma, upscale_factor)
+        adj_fp = color_adjust.fingerprint(adjustments)
 
+        # Tier 1: the exact (image, model options, adjustments) combination
+        # was served before -- return it as-is, no GPU work, no adjustment
+        # recompute.
         if cache:
-            cached_image = load_from_cache(manga_title, manga_chapter, content_hash,
-                                            colorize, upscale, denoise, denoise_sigma, upscale_factor)
-            if cached_image:
-                print(f'[+] [{rid}] Cache hit ({content_hash[:12]}...), skipping GPU work')
-                return jsonify({'colorImgData': cached_image, 'cached': True})
+            final_cached = load_from_cache(manga_title, manga_chapter, content_hash, model_opts, adj_fp)
+            if final_cached:
+                print(f'[+] [{rid}] Cache hit ({content_hash[:12]}..., adjustments={adj_fp}), skipping GPU work')
+                return jsonify({'colorImgData': final_cached, 'cached': True})
 
-        imgio = io.BytesIO(orig_image_binary)
-        image = PIL.Image.open(imgio)
-        image = np.array(image.convert('RGB'))
-        orig_h, orig_w = image.shape[:2]
+        # Tier 2: this exact image was already run through the GPU model with
+        # these model options before, just with different color adjustments
+        # (e.g. the user is trying a different preset on a page they already
+        # read). Reuse that GPU output and only re-run the cheap adjustment
+        # step -- this is what keeps preset/slider changes fast.
+        raw_image = load_array_from_cache(manga_title, manga_chapter, content_hash, model_opts) if cache else None
 
-        if not img_data:
-            coloredness = distance_from_grayscale(PIL.Image.fromarray(image))
-            print(f'[+] [{rid}] Image distance from grayscale: {coloredness}')
-            if coloredness > 1:
-                print(f'[+] [{rid}] Image already colored: {coloredness}')
-                return jsonify({'msg': f'Image: {img_name}, Already colored: {coloredness} > 1'})
+        if raw_image is None:
+            imgio = io.BytesIO(orig_image_binary)
+            image = PIL.Image.open(imgio)
+            image = np.array(image.convert('RGB'))
+            orig_h, orig_w = image.shape[:2]
 
-        print(f'[+] [{rid}] Requested image: {img_name}, Width: {img_width}, Height: {img_height}, hash={content_hash[:12]}')
-        print(f'[+] [{rid}] Colorize: {colorize}, Upscale: {upscale}{f"(x{upscale_factor})" if upscale else ""}, Denoise: {denoise}')
+            if not img_data:
+                coloredness = distance_from_grayscale(PIL.Image.fromarray(image))
+                print(f'[+] [{rid}] Image distance from grayscale: {coloredness}')
+                if coloredness > 1:
+                    print(f'[+] [{rid}] Image already colored: {coloredness}')
+                    return jsonify({'msg': f'Image: {img_name}, Already colored: {coloredness} > 1'})
 
-        with gpu_lock:
-            note_activity()
-            if denoise:
-                print(f'[*] [{rid}] Denoising image...')
-                image = denoise_image(rid, image, denoiser, denoise_sigma)
+            print(f'[+] [{rid}] Requested image: {img_name}, Width: {img_width}, Height: {img_height}, hash={content_hash[:12]}')
+            print(f'[+] [{rid}] Colorize: {colorize}, Upscale: {upscale}{f"(x{upscale_factor})" if upscale else ""}, Denoise: {denoise}')
 
-            if colorize:
-                print(f'[*] [{rid}] Colorizing image...')
-                image = colorize_image(rid, image, colorizer, config.colorized_image_size)
+            with gpu_lock:
+                note_activity()
+                if denoise:
+                    print(f'[*] [{rid}] Denoising image...')
+                    image = denoise_image(rid, image, denoiser, denoise_sigma)
 
-            if upscale:
-                print(f'[*] [{rid}] Upscaling image...')
-                image = upscale_image(rid, image, upscaler, upscale_factor)
-            elif (image.shape[0], image.shape[1]) != (orig_h, orig_w):
-                # No AI super-resolution requested: restore the page's original
-                # pixel dimensions with a plain, non-generative resize so text
-                # stays readable instead of shipping the model's fixed internal
-                # generation size (~576px wide).
-                t0 = time.time()
-                image = cv2.resize(image, (orig_w, orig_h), interpolation=cv2.INTER_LANCZOS4)
-                print(f'[+] [{rid}] Resized (no upscale) {content_hash[:8]} to original {orig_w}x{orig_h} in {time.time()-t0:.2f}s')
-            note_activity()
+                if colorize:
+                    print(f'[*] [{rid}] Colorizing image...')
+                    image = colorize_image(rid, image, colorizer, config.colorized_image_size)
+
+                if upscale:
+                    print(f'[*] [{rid}] Upscaling image...')
+                    image = upscale_image(rid, image, upscaler, upscale_factor)
+                elif (image.shape[0], image.shape[1]) != (orig_h, orig_w):
+                    # No AI super-resolution requested: restore the page's original
+                    # pixel dimensions with a plain, non-generative resize so text
+                    # stays readable instead of shipping the model's fixed internal
+                    # generation size (~576px wide).
+                    t0 = time.time()
+                    image = cv2.resize(image, (orig_w, orig_h), interpolation=cv2.INTER_LANCZOS4)
+                    print(f'[+] [{rid}] Resized (no upscale) {content_hash[:8]} to original {orig_w}x{orig_h} in {time.time()-t0:.2f}s')
+                note_activity()
+
+            raw_image = image
+
+            if cache:
+                try:
+                    save_to_cache(manga_title, manga_chapter, content_hash, model_opts, None, raw_image)
+                except Exception as te:
+                    print(f'[-] [{rid}] Error while caching raw result: {te}')
+        else:
+            print(f'[+] [{rid}] Raw GPU-output cache hit ({content_hash[:12]}...), only re-applying adjustments')
+
+        final_image = color_adjust.apply_adjustments(raw_image, adjustments)
+
+        # Encode once, reuse for both the HTTP response and the cache file --
+        # encoding the same array to WEBP twice (~240ms on a full page) was
+        # most of the cost of an adjustment-only request.
+        webp_bytes = encode_webp(final_image)
+        result_image_data64 = 'data:image/webp;base64,' + base64.b64encode(webp_bytes).decode('utf-8')
 
         if cache:
             try:
-                save_to_cache(manga_title, manga_chapter, content_hash,
-                               colorize, upscale, denoise, denoise_sigma, upscale_factor, image)
-                print(f'[+] [{rid}] Image cached ({content_hash[:12]}...)')
+                save_cache_bytes(manga_title, manga_chapter, content_hash, model_opts, adj_fp, webp_bytes)
+                print(f'[+] [{rid}] Image cached ({content_hash[:12]}..., adjustments={adj_fp})')
             except Exception as te:
                 print(f'[-] [{rid}] Error while caching: {te}')
 
-        result_image_data64 = image_to_base64(image)
         return jsonify({'colorImgData': result_image_data64, 'cached': False})
 
     except RuntimeError as e:
@@ -178,6 +208,16 @@ def handle_cuda_error(e):
 # rendered with different colorize/upscale/denoise settings never collides,
 # and a hit works even when manga_title/manga_chapter can't be detected
 # (e.g. a site not yet in siteConfig.json).
+#
+# There are two cache tiers per image, distinguished by filename suffix:
+#   - "raw": the GPU model's output (denoise+colorize+upscale/resize), before
+#     any color adjustment. Keyed by model options only.
+#   - <adjustments fingerprint>: the final image actually returned to the
+#     client, after color_adjust.apply_adjustments(). Keyed by model options
+#     AND the active adjustment values/preset.
+# This means changing a color-adjustment preset/slider on a page you've
+# already read reuses the cached GPU output and only re-runs the cheap
+# adjustment step, instead of a full GPU re-run.
 def options_fingerprint(colorize, upscale, denoise, denoise_sigma, upscale_factor):
     return f"c{int(colorize)}-u{int(upscale)}x{upscale_factor if upscale else 0}-d{int(denoise)}s{denoise_sigma}"
 
@@ -188,23 +228,48 @@ def get_cache_dir(manga_title, manga_chapter):
     return os.path.join(config.cache_root, title_part, chapter_part)
 
 
-def get_cache_filename(manga_title, manga_chapter, content_hash, colorize, upscale, denoise, denoise_sigma, upscale_factor):
+def get_cache_filename(manga_title, manga_chapter, content_hash, model_opts, adj_fp=None):
     chapter_dir = get_cache_dir(manga_title, manga_chapter)
-    opts = options_fingerprint(colorize, upscale, denoise, denoise_sigma, upscale_factor)
-    filename = f"{content_hash}_{opts}.webp"
+    suffix = adj_fp if adj_fp else 'raw'
+    filename = f"{content_hash}_{model_opts}_{suffix}.webp"
     return os.path.join(chapter_dir, filename)
 
 
-def save_to_cache(manga_title, manga_chapter, content_hash, colorize, upscale, denoise, denoise_sigma, upscale_factor, image):
-    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, colorize, upscale, denoise, denoise_sigma, upscale_factor)
+def encode_webp(image):
+    buffered = io.BytesIO()
+    PIL.Image.fromarray(image).save(buffered, format='WEBP')
+    return buffered.getvalue()
+
+
+def save_to_cache(manga_title, manga_chapter, content_hash, model_opts, adj_fp, image):
+    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, model_opts, adj_fp)
     os.makedirs(os.path.dirname(cache_filename), exist_ok=True)
     save_image(image, cache_filename)
 
 
-def load_from_cache(manga_title, manga_chapter, content_hash, colorize, upscale, denoise, denoise_sigma, upscale_factor):
-    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, colorize, upscale, denoise, denoise_sigma, upscale_factor)
+def save_cache_bytes(manga_title, manga_chapter, content_hash, model_opts, adj_fp, webp_bytes):
+    """Like save_to_cache, but writes already-encoded WEBP bytes directly --
+    avoids re-encoding an array that was already encoded once for the HTTP
+    response (see encode_webp usage in the final-adjustment write path)."""
+    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, model_opts, adj_fp)
+    os.makedirs(os.path.dirname(cache_filename), exist_ok=True)
+    with open(cache_filename, 'wb') as f:
+        f.write(webp_bytes)
+
+
+def load_from_cache(manga_title, manga_chapter, content_hash, model_opts, adj_fp):
+    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, model_opts, adj_fp)
     if os.path.exists(cache_filename):
         return load_image_as_base64(cache_filename)
+    return None
+
+
+def load_array_from_cache(manga_title, manga_chapter, content_hash, model_opts):
+    """Like load_from_cache, but for the raw tier: returns a decoded uint8
+    RGB array (so adjustments can be re-applied) instead of a base64 string."""
+    cache_filename = get_cache_filename(manga_title, manga_chapter, content_hash, model_opts)
+    if os.path.exists(cache_filename):
+        return np.array(PIL.Image.open(cache_filename).convert('RGB'))
     return None
 
 

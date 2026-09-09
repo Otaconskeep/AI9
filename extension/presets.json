@@ -1,0 +1,62 @@
+{
+    "Default": {
+        "saturation": 1.0, "contrast": 1.0, "brightness": 0.0, "gamma": 1.0,
+        "warmth": 0.0, "hueShift": 0, "shadowTintStrength": 0.0,
+        "magentaReduction": 0.0, "skinToneWarmth": 0.0, "blackLevel": 0.0,
+        "highlightSoftness": 0.0
+    },
+    "Neutral": {
+        "saturation": 0.95, "contrast": 0.95, "brightness": 0.0, "gamma": 1.0,
+        "warmth": -0.05, "hueShift": 0, "shadowTintStrength": 0.15,
+        "magentaReduction": 0.2, "skinToneWarmth": -0.1, "blackLevel": 0.0,
+        "highlightSoftness": 0.1
+    },
+    "Soft Anime": {
+        "saturation": 0.85, "contrast": 0.85, "brightness": 0.02, "gamma": 1.05,
+        "warmth": 0.05, "hueShift": 0, "shadowTintStrength": 0.25,
+        "magentaReduction": 0.35, "skinToneWarmth": -0.1, "blackLevel": -0.05,
+        "highlightSoftness": 0.35
+    },
+    "Warm": {
+        "saturation": 1.05, "contrast": 1.0, "brightness": 0.0, "gamma": 1.0,
+        "warmth": 0.35, "hueShift": 0, "shadowTintStrength": 0.0,
+        "magentaReduction": 0.1, "skinToneWarmth": 0.25, "blackLevel": 0.0,
+        "highlightSoftness": 0.1
+    },
+    "Cool": {
+        "saturation": 1.0, "contrast": 1.0, "brightness": 0.0, "gamma": 1.0,
+        "warmth": -0.35, "hueShift": -5, "shadowTintStrength": 0.0,
+        "magentaReduction": 0.0, "skinToneWarmth": -0.15, "blackLevel": 0.0,
+        "highlightSoftness": 0.1
+    },
+    "Night Scene": {
+        "saturation": 0.9, "contrast": 1.15, "brightness": -0.08, "gamma": 0.9,
+        "warmth": -0.1, "hueShift": 0, "shadowTintStrength": 0.3,
+        "magentaReduction": 0.4, "skinToneWarmth": -0.05, "blackLevel": 0.08,
+        "highlightSoftness": 0.2
+    },
+    "Reduced Purple Cast": {
+        "saturation": 1.0, "contrast": 1.0, "brightness": 0.0, "gamma": 1.0,
+        "warmth": 0.0, "hueShift": 0, "shadowTintStrength": 0.5,
+        "magentaReduction": 0.7, "skinToneWarmth": 0.0, "blackLevel": 0.0,
+        "highlightSoftness": 0.0
+    },
+    "Lower Contrast": {
+        "saturation": 1.0, "contrast": 0.75, "brightness": 0.03, "gamma": 1.05,
+        "warmth": 0.0, "hueShift": 0, "shadowTintStrength": 0.0,
+        "magentaReduction": 0.0, "skinToneWarmth": 0.0, "blackLevel": -0.05,
+        "highlightSoftness": 0.3
+    },
+    "Vivid": {
+        "saturation": 1.35, "contrast": 1.2, "brightness": 0.0, "gamma": 1.0,
+        "warmth": 0.05, "hueShift": 0, "shadowTintStrength": 0.0,
+        "magentaReduction": 0.15, "skinToneWarmth": 0.05, "blackLevel": 0.05,
+        "highlightSoftness": 0.0
+    },
+    "Manga Safe / Text Safe": {
+        "saturation": 0.95, "contrast": 1.05, "brightness": 0.0, "gamma": 1.0,
+        "warmth": 0.0, "hueShift": 0, "shadowTintStrength": 0.2,
+        "magentaReduction": 0.3, "skinToneWarmth": 0.0, "blackLevel": 0.0,
+        "highlightSoftness": 0.15
+    }
+}

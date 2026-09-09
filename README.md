@@ -15,6 +15,11 @@ Built on top of [gilgamesh117/Manga-Colorizer](https://github.com/gilgamesh117/M
   mode (no forced 4x AI upscaling).
 - **`<canvas>`-based readers**, not just `<img>` — the stock extension only
   ever looked at `<img src>`.
+- **Adjustable color controls and preset filters** — tune saturation,
+  contrast, brightness, gamma, warmth, hue, and specifically the model's
+  tendency toward purple/magenta shadow casts and over-warm orange skin
+  tones, as a fast post-processing step. See
+  [Color adjustment controls](#color-adjustment-controls) below.
 
 This was built and verified end-to-end on a Ryzen 7 7800X3D / RTX 5070 Ti
 Windows box ("AI9"), targeting Crunchyroll Manga's web reader, but none of
@@ -271,6 +276,65 @@ an earlier page/chapter and confirm it comes back instantly from cache
 
 **Extension** (`extension/popup.js` defaults): cache on, upscale off,
 concurrency (`maxActiveFetches`) 1.
+
+## Color adjustment controls
+
+The GAN colorizer's raw output can run too strong in places — a purple/magenta
+cast in shadows and over-warm orange skin tones being the two most common
+complaints. Rather than retraining the model, `backend/color_adjust.py` is a
+lightweight (numpy/OpenCV, no GPU) post-processing stage applied after
+denoise → colorize → upscale/resize, controlled from the extension popup.
+
+**Design**: 11 sliders (saturation, contrast, brightness, gamma, warmth, hue
+shift, shadow tint reduction, magenta/purple reduction, skin tone warmth,
+black level, highlight softness), all defaulting to a true no-op — an
+untouched request produces bit-identical output to the pre-adjustment
+pipeline (`is_identity()` fast-path). Ten presets (`extension/presets.json`)
+just set those same sliders to canned values; picking one doesn't lock you
+out of then fine-tuning individual sliders afterward. The two operations
+targeting the specific complaints — magenta reduction and skin tone warmth —
+are hue-band-limited (Gaussian falloff around the magenta/orange hue, in
+OpenCV HSV space) and, for magenta specifically, weighted toward dark pixels
+(`(1-v)^1.5`), rather than a global saturation/hue shift, so the fix doesn't
+bleed into unrelated colors. `_highlight_softness()` is defined so pure
+white (1.0) always maps back to exactly 1.0, and every preset is verified to
+keep bubble-white above 200/255 and bubble-black below 60/255 (see the
+"Speech-bubble safety" check design in `color_adjust.py`'s docstring) — line
+art and text aren't blurred or geometrically touched by any of this, only
+recolored.
+
+**Presets** (full values in `extension/presets.json`):
+
+| Preset | What it does |
+|---|---|
+| Default | No-op — current/original behavior |
+| Neutral | Mild overall cleanup: slightly desaturated, slight purple/orange correction |
+| Soft Anime | Lower contrast, softened highlights, gentler and less harsh |
+| Warm | Pushes warmth and skin tone up (a stylistic choice, not a bug fix) |
+| Cool | Pushes warmth down, slightly cooler hue |
+| Night Scene | Deeper blacks, lower brightness, cooler, with strong magenta suppression (dark scenes are where the cast is worst) |
+| Reduced Purple Cast | Isolated, strong fix: shadow tint reduction 0.5, magenta reduction 0.7, everything else neutral |
+| Lower Contrast | Isolated contrast reduction (0.75) + highlight softening, everything else neutral |
+| Vivid | Punchier: higher saturation and contrast, opposite of Soft Anime |
+| Manga Safe / Text Safe | Near-neutral saturation, crisper linework contrast, strong highlight protection for bubble whites |
+
+**Caching**: the two operations that used to be one cache tier are now two.
+The "raw" tier caches the GPU model's output (denoise+colorize+upscale),
+keyed by model options only. The "final" tier caches what's actually
+returned to the client, keyed by model options *and* the active adjustment
+values. Switching presets/sliders on a page you've already read reuses the
+cached raw GPU output and only re-runs the cheap adjustment step (~450ms on
+a full page, vs ~1.2s for a cold GPU run) instead of a full GPU re-run;
+re-requesting the exact same (image, settings) combination is a ~30-50ms
+cache hit either way. This is why `color_adjust.py` uses `cv2.cvtColor` for
+HSV conversion rather than the more obvious `matplotlib.colors` helper —
+measured ~25-150x faster on a full-page image (480ms vs ~15ms), which is the
+difference between "instant" and "sluggish" when trying different presets.
+
+**Persistence**: sliders and the active preset are saved to
+`browser.storage.local` immediately on change (not gated behind the
+"Colorize!" button), so they survive a Firefox restart the same way the
+other settings do.
 
 ## Troubleshooting / gotchas actually hit while building this
 

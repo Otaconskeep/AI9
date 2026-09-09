@@ -23,6 +23,8 @@ if (window.injectedMC !== 1) {
     var showOriginal = false  // Shows original image, if processed (colorized)
     var showColorized = true  // Shows processed image, if processed (colorized)
 
+    var adjustments = null  // Color adjustment values (saturation/contrast/warmth/etc, see popup.js); null = server defaults (no-op)
+
     var siteConfigFile = 'siteConfig.json'  // Manga detail selector queries for organized caching
     let siteConfigurations = null;  // siteConfig.json is loaded in this variable
 
@@ -285,6 +287,7 @@ if (window.injectedMC !== 1) {
 
 				mangaTitle: mangaProps.title,
 				mangaChapter: mangaProps.chapter,
+				adjustments: adjustments,
             }
 
             console.log(`[MC] [${index}] Sending: `, postData);
@@ -423,6 +426,7 @@ if (window.injectedMC !== 1) {
 
                 mangaTitle: mangaProps.title,
                 mangaChapter: mangaProps.chapter,
+                adjustments: adjustments,
             }
 
             console.log(`[MC] [${index}] Sending (canvas): `, postData);
@@ -616,12 +620,13 @@ if (window.injectedMC !== 1) {
     const colorizeMangaEventHandler = (event=null) => {
         try {
             browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showColorized", "cache", "denoise", "colorize", "upscale", "denoiseSigma", "upscaleFactor",
-                "colorTolerance", "colorStride", "minImgHeight", "minImgHeight"], (result) => {
+                "colorTolerance", "colorStride", "minImgHeight", "minImgHeight", "adjustments"], (result) => {
                 apiURL = result.apiURL;
                 if (apiURL && siteConfigurations) {
                     maxActiveFetches = Number(result.maxActiveFetches || "1")
                     showOriginal = result.showOriginal
                     showColorized = result.showColorized
+                    adjustments = result.adjustments || null
 
                     cache = result.cache
                     denoise = result.denoise
