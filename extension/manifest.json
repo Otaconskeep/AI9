@@ -14,6 +14,7 @@
     "*://readmanga.io/*",
     "*://manhuatop.org/*",
     "*://manhuaus.com/*",
+    "*://mangapill.com/*",
     "https://127.0.0.1/*",
     "https://192.168.50.162/*"
   ],
@@ -21,18 +22,7 @@
 
   "web_accessible_resources": [
     {
-      "matches": [
-        "https://www.crunchyroll.com/*",
-        "https://crunchyroll.com/*",
-        "*://mangadex.org/*",
-        "*://senkuro.com/*",
-        "*://chapmanganelo.com/*",
-        "*://fanfox.net/*",
-        "*://mangakakalot.com/*",
-        "*://readmanga.io/*",
-        "*://manhuatop.org/*",
-        "*://manhuaus.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "resources": ["siteConfig.json"]
     }
   ],

@@ -263,10 +263,18 @@ if (window.injectedMC !== 1) {
             }
         } catch(eIsColor) {
             canSendData = false
-            if (!eIsColor.message.startsWith("Failed to execute 'getImageData'")) {
+            // DOMException.name is standardized as "SecurityError" for a
+            // tainted cross-origin canvas on both Chromium and Firefox --
+            // .message text is NOT: Chrome says "Failed to execute
+            // 'getImageData'...", Firefox says "The operation is insecure."
+            // Matching on the Chrome-specific message (the original bug
+            // here) silently broke the imgURL fallback below on every
+            // Firefox user hitting a cross-origin, non-CORS image source.
+            if (eIsColor.name !== 'SecurityError') {
                 console.log(`[MC] [${index}] Colorized context error: ${eIsColor}`);
                 return 0;
             }
+            console.log(`[MC] [${index}] Canvas tainted (cross-origin image, no CORS) -- sending imgURL for server-side fetch instead: ${imgName}`);
         }
 
         const isAnimated = img.src.includes('animation')
@@ -393,7 +401,9 @@ if (window.injectedMC !== 1) {
             }
         } catch(eIsColor) {
             canSendData = false
-            if (!eIsColor.message.startsWith("Failed to execute 'getImageData'")) {
+            // See the matching comment in setColoredOrFetch: .name (not
+            // .message) is the cross-browser-correct check for this.
+            if (eIsColor.name !== 'SecurityError') {
                 console.log(`[MC] [${index}] Colorized context error (canvas): ${eIsColor}`);
                 return 0;
             }
