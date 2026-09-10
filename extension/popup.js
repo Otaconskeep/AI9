@@ -40,7 +40,7 @@ browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showCo
     colorToleranceInput.value = result.colorTolerance || "30";
     colorStrideInput.value = result.colorStride || "4";
     websitesInput.value = result.websites || "www.crunchyroll.com\nmangadex.org/chapter\nchapmanganelo.com\nfanfox.net" +
-                            "\nmangakakalot.com\nsenkuro.com\nreadmanga.io\nmanhuatop.org";
+                            "\nmangakakalot.com\nsenkuro.com\nreadmanga.io\nmanhuatop.org\nmangapill.com";
     const sitesArray = websitesInput.value.split("\n");
     websitesInput.rows = sitesArray.length + 1
     websitesInput.cols = sitesArray.reduce((len, str) => { return Math.max(len, str.length) }, 25);
@@ -52,11 +52,24 @@ browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showCo
                 addSiteButton.innerText = "Add " + hostname;
                 addSiteButton.removeAttribute("style");
                 addSiteButton.addEventListener("click",() => {
-                    addSiteButton.style.display = "none"
-                    if (websitesInput.value.length > 0 && !websitesInput.value.endsWith("\n"))
-                        websitesInput.value += "\n";
-                    websitesInput.value += hostname;
-                    browser.storage.local.set({websites: websitesInput.value.trim()});
+                    // Adding a hostname to the list is useless on its own --
+                    // background.js's browser.scripting.executeScript into
+                    // that tab silently fails without an actual granted host
+                    // permission. Request it here (must happen inside this
+                    // click handler -- permissions.request() requires a user
+                    // gesture) using the optional_host_permissions ceiling
+                    // declared in the manifest.
+                    browser.permissions.request({ origins: [`*://${hostname}/*`] }).then((granted) => {
+                        if (!granted) {
+                            addSiteButton.innerText = "Permission denied - click to retry";
+                            return;
+                        }
+                        addSiteButton.style.display = "none"
+                        if (websitesInput.value.length > 0 && !websitesInput.value.endsWith("\n"))
+                            websitesInput.value += "\n";
+                        websitesInput.value += hostname;
+                        browser.storage.local.set({websites: websitesInput.value.trim()});
+                    });
                 });
             }
         }

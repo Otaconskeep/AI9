@@ -367,6 +367,29 @@ other settings do.
   and use `optional_host_permissions` + a runtime `permissions.request()`
   for anything added later, rather than granting blanket access at install
   time.
+- **A new manga site injects fine but every image fails with `Colorized
+  context error: SecurityError` in the console** — cross-origin canvas
+  taint detection must check `exception.name === 'SecurityError'`, not
+  `exception.message`. Chrome's message for this is `"Failed to execute
+  'getImageData'..."`; Firefox's is `"The operation is insecure."` — they
+  never match, so message-string checks (the original upstream code did
+  this, and it got copied into this guide's canvas-support path too before
+  being caught) silently skip the `imgURL` server-side-fetch fallback on
+  Firefox specifically, on every image sourced from a different origin than
+  the page itself (a very common setup — CDN-hosted manga pages). Fixed in
+  `contentScript.js`'s two `catch(eIsColor)` blocks.
+- **A new site's manifest permissions are added but "Reload" in
+  `about:debugging` doesn't pick them up** — for a temporary add-on,
+  permission changes in particular can survive a `Reload` in a stale state.
+  Remove it and use "Load Temporary Add-on" fresh instead when you've
+  changed `host_permissions`/`web_accessible_resources`.
+- **`web_accessible_resources` `matches` is a static manifest list — a
+  runtime `permissions.request()` grant can't extend it.** If a
+  non-secret bundled file (like `siteConfig.json`, just CSS selector
+  strings, no user data) needs to be reachable from *any* dynamically-added
+  site, its `matches` needs to be `["<all_urls>"]` up front; narrowing it to
+  a fixed list breaks every site added later through the "Add site" flow,
+  not just the one you're currently testing.
 
 ## Known limitations
 

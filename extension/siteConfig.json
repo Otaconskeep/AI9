@@ -5,6 +5,12 @@
         "useAltTextAsImageName": false,
         "_note": "Best-effort placeholder (falls back to the page <title> tag). Crunchyroll's actual reader DOM has not been inspected live -- refine titleQuery/chapterQuery selectors once real DOM structure is confirmed. Does not affect colorization correctness: the server caches by image content hash regardless, this only affects cache folder naming."
     },
+    "mangapill.com": {
+        "titleQuery": "document.querySelector('h1#top')?.innerText",
+        "chapterQuery": "document.querySelector('h1#top')?.innerText",
+        "useAltTextAsImageName": false,
+        "_note": "Verified live against a real chapter page (fetched HTML, not guessed): pages are <img class=\"js-page\" data-src=\"...\" loading=\"lazy\"> -- no src until the site's own JS/scroll-driven loader populates it, which the generic !img.src wait-for-'load' path in contentScript.js already handles. The h1#top heading contains 'Title Chapter N' combined (no separate title/chapter elements found), so both queries point at the same element -- fine, since caching is content-hash keyed and this only affects cache folder naming. Images are served from a different CDN domain (cross-origin), so canvas reads may be tainted depending on that CDN's CORS headers; the existing imgURL server-side-fetch fallback covers that case."
+    },
     "mangadex.org": {
         "titleQuery": "document.querySelector('a[data-v-5d3b2210]')?.innerText",
         "chapterQuery": "document.querySelector('div#chapter-selector span[data-v-d2fabe5b]')?.innerText",
