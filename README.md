@@ -26,6 +26,69 @@ Windows box ("AI9"), targeting Crunchyroll Manga's web reader, but none of
 the patches are Crunchyroll-specific — this works for any `<img>` or
 `<canvas>`-based manga reader site.
 
+## Install (the easy way)
+
+**Requirements: Windows 10/11, an NVIDIA RTX 30/40/50-series GPU with its
+driver already installed. That's it — everything else gets installed for
+you.**
+
+1. Download this repo (green **Code** button → **Download ZIP**, then
+   extract it anywhere) or `git clone` it.
+2. Open the extracted `AI9` folder.
+3. **Double-click `install_ai9.bat`.**
+
+That's the whole install. A black window opens and does everything
+automatically:
+
+- installs Git and Python 3.12 if they're not already on your PC (via
+  `winget`, no manual downloads),
+- detects your specific NVIDIA GPU and picks the matching PyTorch/CUDA build
+  for it (RTX 50 → `cu128`, RTX 40 → `cu126`/`cu121`, RTX 30 → `cu118`),
+- downloads and verifies the AI model weights,
+- runs a real GPU test (not just "is a GPU present" — an actual inference
+  pass) to prove colorization will work before it declares success,
+- installs Firefox if it's missing,
+- registers a Windows background task so the colorizer server starts
+  automatically and restarts itself if it ever crashes,
+- and finishes by printing the URL to open and the one remaining manual
+  step (loading the Firefox extension — browsers don't allow installers to
+  do this part for you, see [step 8](#8-install-the-firefox-extension)).
+
+It takes several minutes the first time (downloading Python packages and a
+~200MB+ model file). **It's safe to just double-click it again** if
+anything interrupts it, or to check for updates later — every step skips
+work that's already done and only fetches what's missing or changed.
+
+If you'd rather run it from a terminal instead of double-clicking (or you're
+scripting this onto multiple machines), open **Git Bash** in the folder and
+run:
+
+```bash
+./install_ai9.sh
+```
+
+Both do the exact same thing — `install_ai9.bat` just finds/launches Git
+Bash for you so there's nothing to open manually first.
+
+**Optional overrides** (set these as normal Windows environment variables,
+or `export` them before running `install_ai9.sh` from Git Bash, before
+installing):
+
+| Variable | Default | What it changes |
+|---|---|---|
+| `AI9_INSTALL_DIR` | `C:\opt\manga-colorizer` | Where AI9 gets installed |
+| `AI9_INSTALL_FIREFOX` | `1` | Set to `0` to skip installing Firefox |
+| `AI9_REGISTER_TASK` | `1` | Set to `0` to skip auto-registering the always-on background service |
+
+Once it finishes, jump straight to [step 8](#8-install-the-firefox-extension)
+below to load the Firefox extension — that's the only step a script can't do
+for you (Firefox requires a human click for unsigned add-ons).
+
+Want to know what's actually happening under the hood, tune something by
+hand, or troubleshoot a failure? Everything below is the same install,
+broken into manual steps, plus the full configuration/troubleshooting
+reference.
+
 ## How it works
 
 ```
@@ -46,7 +109,14 @@ Colorized image swapped into the page (new <img src> / redrawn <canvas>)
 Concurrency is 1 by default (`maxActiveFetches`) — one page colorizes at a
 time, queued, so the GPU isn't hammered and stays available for other work.
 
-## Prerequisites
+## Manual setup (advanced / what the installer does step-by-step)
+
+Use this section if you want to understand or debug the install, you're on
+hardware the auto-installer doesn't recognize, or you just prefer doing it
+by hand. If you already ran `install_ai9.bat`/`install_ai9.sh` successfully,
+**you can skip straight to [step 8](#8-install-the-firefox-extension).**
+
+### Prerequisites
 
 - An NVIDIA GPU. This guide's exact versions were validated on an RTX 5070 Ti
   (`sm_120`, Blackwell) — **check your own GPU's compute capability and pick
@@ -56,8 +126,6 @@ time, queued, so the GPU isn't hammered and stays available for other work.
   touch the driver).
 - Python 3.10+ (3.12 used here) and Git.
 - Firefox (temporary unsigned extension loading — see Limitations).
-
-## Setup
 
 ### 1. Inspect before you install anything
 
@@ -338,6 +406,19 @@ other settings do.
 
 ## Troubleshooting / gotchas actually hit while building this
 
+- **Double-clicking `install_ai9.bat` flashes a window and closes, or SmartScreen
+  warns about an unrecognized app** — this is a plain batch/bash script, not a
+  signed binary, so Windows SmartScreen may flag it the first time; click
+  **More info → Run anyway**. If it closes instantly with no message, right-click
+  it → **Run as administrator is not required**, but do check that Git Bash
+  (`C:\Program Files\Git\bin\bash.exe`) exists; if it doesn't, the `.bat` should
+  install Git itself via `winget` — if `winget` also isn't available, install
+  ["App Installer"](https://apps.microsoft.com/detail/9nblggh4nns1) from the
+  Microsoft Store first, then rerun.
+- **The installer fails partway through** — it's designed to be safe to just
+  rerun (`install_ai9.bat` again, or `./install_ai9.sh`); every step checks
+  what's already done (repo cloned, venv created, correct PyTorch installed,
+  weights downloaded) and skips it, so a rerun only redoes the step that failed.
 - **`torch.load` fails with a `weights_only` UnpicklingError** — PyTorch
   2.6+ defaults `torch.load(weights_only=True)`. The colorizer and denoiser
   checkpoints are plain tensor state-dicts (fine either way), but the
@@ -420,8 +501,9 @@ other settings do.
 
 - **Antonio Garcia** — designed this deployment: the GPU/CUDA compatibility
   work, the Windows venv + Scheduled Task service architecture, the caching
-  and idle-VRAM design, and the Firefox extension patches (canvas support,
-  least-privilege permissions, SPA detection) described in this guide.
+  and idle-VRAM design, the Firefox extension patches (canvas support,
+  least-privilege permissions, SPA detection), and the one-click
+  `install_ai9.bat`/`install_ai9.sh` installer described in this guide.
 - [gilgamesh117/Manga-Colorizer](https://github.com/gilgamesh117/Manga-Colorizer) —
   base project this guide patches (MIT license, see [LICENSE](LICENSE)).
 - [qweasdd/manga-colorization-v2](https://github.com/qweasdd/manga-colorization-v2) —
