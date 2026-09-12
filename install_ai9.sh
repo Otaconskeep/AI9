@@ -78,7 +78,7 @@ cat <<'AGG_ASCII'
 AGG_ASCII
 printf '\033[0m\n'
 printf '\033[1;36m%s\033[0m\n' "$BRAND"
-printf '\033[0;37m%s — %s\033[0m\n\n' "$PRODUCT" "$TAGLINE"
+printf '\033[0;37m%s :: %s\033[0m\n\n' "$PRODUCT" "$TAGLINE"
 
 is_windows_bash || die "This installer targets Windows 10/11 under Git Bash. Do not run it inside WSL."
 
@@ -463,7 +463,7 @@ LAN_IP="$(powershell.exe -NoProfile -Command \
   2>/dev/null | tr -d '\r' || true)"
 
 printf '\n\033[1;35m============================================================\033[0m\n'
-printf '\033[1;35m ANTONIO G. GARCIA // OTACONSKEEP — AI9 ONLINE\033[0m\n'
+printf '\033[1;35m ANTONIO G. GARCIA // OTACONSKEEP :: AI9 ONLINE\033[0m\n'
 printf '\033[0;37m                 Built for the Keep.\033[0m\n'
 printf '\033[1;35m============================================================\033[0m\n'
 printf 'Install folder : %s\n' "$INSTALL_DIR"
