@@ -116,7 +116,7 @@ WINGET="$(find_winget || true)"
 
 winget_install() {
   local package_id="$1"
-  [[ -n "$WINGET" ]] || die "winget is unavailable. Install Microsoft's 'App Installer', reopen Git Bash, and rerun."
+  [[ -n "$WINGET" ]] || die "winget is unavailable. What to do: install 'App Installer' from the Microsoft Store (https://apps.microsoft.com/detail/9nblggh4nns1), then close this window and double-click install_ai9.bat again."
   "$WINGET" install \
     --id "$package_id" \
     -e \
@@ -147,7 +147,7 @@ if [[ -z "$GIT" ]]; then
   log "Git is missing; installing it"
   winget_install "Git.Git"
   GIT="$(find_git || true)"
-  [[ -n "$GIT" ]] || die "Git installed but is not visible yet. Reopen Git Bash and rerun this installer."
+  [[ -n "$GIT" ]] || die "Git installed but is not visible yet. What to do: close this window completely, then double-click install_ai9.bat again (Windows needs a fresh window to see newly installed programs)."
 fi
 ok "Git: $("$GIT" --version)"
 
@@ -179,7 +179,7 @@ if [[ -z "$PYTHON" ]]; then
   log "Python 3.10+ is missing; installing Python 3.12"
   winget_install "Python.Python.3.12"
   PYTHON="$(find_python || true)"
-  [[ -n "$PYTHON" ]] || die "Python installed but could not be located. Reopen Git Bash and rerun."
+  [[ -n "$PYTHON" ]] || die "Python installed but could not be located. What to do: close this window completely, then double-click install_ai9.bat again."
 fi
 ok "Python: "$("$PYTHON" --version 2>&1)""
 
@@ -200,7 +200,7 @@ find_nvidia_smi() {
 
 log "Antonio G. Garcia hardware scan: identifying NVIDIA GPU and driver"
 NVIDIA_SMI="$(find_nvidia_smi || true)"
-[[ -n "$NVIDIA_SMI" ]] || die "nvidia-smi was not found. Install the NVIDIA GPU driver first, then rerun. A standalone CUDA Toolkit is not required."
+[[ -n "$NVIDIA_SMI" ]] || die "nvidia-smi was not found -- this usually means the NVIDIA GPU driver isn't installed. What to do: go to https://www.nvidia.com/download/index.aspx, download and install the driver for your specific GPU model, restart your PC, then double-click install_ai9.bat again. (You do NOT need to separately install anything called 'CUDA Toolkit' -- the driver alone is enough.)"
 
 GPU_NAME="$("$NVIDIA_SMI" --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1 | tr -d '\r')"
 [[ -n "$GPU_NAME" ]] || die "Could not identify the NVIDIA GPU with nvidia-smi."
@@ -226,7 +226,7 @@ case "$GPU_NAME" in
       TORCH_CUDA="12.1"
       MIN_DRIVER_CUDA="12.1"
     else
-      die "$GPU_NAME detected, but the driver only advertises CUDA $CUDA_MAX. Update the NVIDIA driver and rerun."
+      die "Found your $GPU_NAME, but its NVIDIA driver is out of date (reports CUDA $CUDA_MAX, needs 12.1+). What to do: go to https://www.nvidia.com/download/index.aspx, download and install the latest driver for your GPU, restart your PC, then double-click install_ai9.bat again."
     fi
     ;;
   *"RTX 30"*)
@@ -236,12 +236,12 @@ case "$GPU_NAME" in
     GPU_FAMILY="RTX 30-series / Ampere"
     ;;
   *)
-    die "Unsupported/unknown automatic GPU mapping: '$GPU_NAME'. This installer currently auto-selects PyTorch for RTX 30, 40, and 50 series."
+    die "Your GPU ('$GPU_NAME') isn't one this installer auto-configures yet -- it currently supports NVIDIA RTX 30, 40, and 50-series cards. If you have one of those and this is a false detection, or you have a different NVIDIA card and know what you're doing, see the 'Manual setup' section in README.md to install PyTorch by hand."
     ;;
 esac
 
 version_ge "$CUDA_MAX" "$MIN_DRIVER_CUDA" || \
-  die "$GPU_NAME needs at least the $TORCH_FLAVOR PyTorch runtime, but the installed driver reports CUDA $CUDA_MAX. Update the NVIDIA driver and rerun."
+  die "Your $GPU_NAME needs a newer NVIDIA driver (it reports supporting only CUDA $CUDA_MAX, needs $MIN_DRIVER_CUDA+). What to do: go to https://www.nvidia.com/download/index.aspx, download and install the latest driver for your GPU, restart your PC, then double-click install_ai9.bat again."
 
 ok "GPU: $GPU_NAME"
 ok "Family: $GPU_FAMILY"
@@ -473,10 +473,24 @@ printf 'Local API      : https://127.0.0.1:5000/\n'
 if [[ -n "$LAN_IP" ]]; then
   printf 'LAN API        : https://%s:5000/\n' "$LAN_IP"
 fi
-printf 'Firefox addon  : %s\n' "$INSTALL_DIR/extension/manifest.json"
 printf 'Logs           : %s\n' "$INSTALL_DIR/logs"
-printf '\nFirefox still requires the unsigned extension to be loaded manually:\n'
-printf '  about:debugging#/runtime/this-firefox -> Load Temporary Add-on\n'
-printf '  choose: %s\n' "$INSTALL_DIR/extension/manifest.json"
+
+MANIFEST_WINPATH="$(winpath "$INSTALL_DIR/extension/manifest.json")"
+printf '\n\033[1;33m============================================================\033[0m\n'
+printf '\033[1;33m ONE LAST STEP (a browser cannot do this part automatically):\033[0m\n'
+printf '\033[1;33m============================================================\033[0m\n'
+printf '  1. Open the Firefox browser (not any other browser).\n'
+printf '  2. Click the address bar at the top, type this exactly, and press Enter:\n'
+printf '       \033[1;36mabout:debugging#/runtime/this-firefox\033[0m\n'
+printf '  3. On that page, click the button labeled \033[1;36mLoad Temporary Add-on...\033[0m\n'
+printf '  4. A file-picker window opens. Copy/paste this exact file path into it,\n'
+printf '     then press Enter (or click Open):\n'
+printf '       \033[1;36m%s\033[0m\n' "$MANIFEST_WINPATH"
+printf '  5. You should now see "AI9 Manga Colorizer" (or similar) listed on that\n'
+printf '     page. That means it worked. Open a manga page in a new tab and start\n'
+printf '     reading -- pages should start colorizing automatically.\n'
+printf '\n  Note: Firefox forgets this extension every time it fully restarts,\n'
+printf '  since it is unsigned. If colorizing stops working after a Firefox\n'
+printf '  restart, just repeat steps 1-4 above -- it takes 30 seconds.\n'
 printf '\n[ANTONIO G. GARCIA] Rerunning this installer is safe; completed steps are reused/skipped where possible.\n'
 printf '[ANTONIO G. GARCIA] AI9 deployment complete. Welcome to the Keep.\n'
