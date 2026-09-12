@@ -497,6 +497,32 @@ other settings do.
   though, not correctness (caching is keyed by image content hash
   regardless of whether title/chapter detection succeeds).
 
+## Support
+
+Hit a wall the [troubleshooting section](#troubleshooting--gotchas-actually-hit-while-building-this)
+above doesn't cover, or just want to say it worked? Come by Discord:
+
+### 💬 [discord.gg/cZDeqECzX](https://discord.gg/cZDeqECzX)
+
+Post your GPU model, the exact error text, and whether it happened during
+install or while reading — that's usually enough to diagnose it fast.
+
+## About the Engineer
+
+**Antonio G. Garcia ("Otaconskeep")** designs and ships local-first AI
+infrastructure end to end — not just prompting a model, but the layer
+underneath it: GPU/CUDA compatibility across NVIDIA generations, deployment
+automation that survives reboots and crashes unattended, content-addressed
+caching strategies, and browser-extension internals down to cross-browser
+`DOMException` behavior. This repository is a worked example of that: real
+GPU inference (not a cloud API call wearing a GPU's name), a two-tier cache
+keyed by content hash *and* processing options, and a cross-browser bug
+(`.name` vs `.message` on a `SecurityError`) that shipped in the original
+upstream project undetected until it was root-caused and fixed here.
+
+Available for consulting on local AI deployment, GPU/CUDA compatibility
+work, and browser-extension engineering — reach out in Discord above.
+
 ## Credits
 
 - **Antonio Garcia** — designed this deployment: the GPU/CUDA compatibility
