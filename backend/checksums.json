@@ -1,18 +1,30 @@
 {
   "schema_version": 1,
-  "description": "Expected SHA-256 digests for installer-managed model assets. Use an empty string or PENDING until a digest is published; the installer then skips digest checks for that asset.",
+  "description": "Expected SHA-256 digests for installer-managed model assets. Digests recorded 2026-09-13 from canonical installer sources.",
   "files": {
     "generator.zip": {
       "relative_path": "networks/generator.zip",
-      "sha256": "PENDING"
+      "sha256": "087e6a0bc02770e732a52f33878b71a272a6123c9ac649e9b5bfb75e39e5c1d5",
+      "bytes": 128960375,
+      "source": "https://drive.google.com/uc?id=1qmxUEKADkEM4iYLp1fpPLLKnfZ6tcF-t",
+      "asset_id": "1qmxUEKADkEM4iYLp1fpPLLKnfZ6tcF-t",
+      "note": "Colorizer generator weights (torch archive ZIP). This is the colorizer model payload; there is no separate colorizer remote artifact."
     },
     "RealESRGAN_x4plus_anime_6B.pt": {
       "relative_path": "networks/RealESRGAN_x4plus_anime_6B.pt",
-      "sha256": "PENDING"
+      "sha256": "6a276ed556d0ee68b6a1e887f91dab6dd67fb96d2cbb0690dcaddb4830836a27",
+      "bytes": 17944851,
+      "source": "https://github.com/gilgamesh117/Manga-Colorizer (Backend/networks/RealESRGAN_x4plus_anime_6B.pt)",
+      "asset_id": "upstream-manga-colorizer-main",
+      "note": "Copied from upstream Manga-Colorizer during install_ai9.sh sync."
     },
     "denoising/models/net_rgb.pth": {
       "relative_path": "denoising/models/net_rgb.pth",
-      "sha256": "PENDING"
+      "sha256": "0fe98bfd2ac870b15f360661b1c4789eecefc6dc2e4462842a0dd15e149a0433",
+      "bytes": 3435567,
+      "source": "https://github.com/gilgamesh117/Manga-Colorizer (Backend/denoising/models/net_rgb.pth)",
+      "asset_id": "upstream-manga-colorizer-main",
+      "note": "Copied from upstream Manga-Colorizer during install_ai9.sh sync."
     }
   }
 }
