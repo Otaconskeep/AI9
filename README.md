@@ -26,6 +26,16 @@ Windows box ("AI9"), targeting Crunchyroll Manga's web reader, but none of
 the patches are Crunchyroll-specific. This works for any `<img>` or
 `<canvas>`-based manga reader site.
 
+## AI9 Manga Colorizer
+
+Real local inference running through AI9. Black-and-white manga in, colorized page out.
+
+This is a real capture of AI9 taking a black-and-white manga page through the local colorization workflow and producing the finished colored result.
+
+![AI9 Manga Colorizer Demo](docs/assets/ai9-manga-colorizer-demo.gif)
+
+**LOCAL GPU // HARDWARE-AWARE // SELF-HOSTED**
+
 ## Install (the easy way)
 
 **Requirements: Windows 10/11, an NVIDIA RTX 30/40/50-series GPU with its
