@@ -9,16 +9,17 @@ TAGLINE="Built for the Keep."
 # Target shell: Git Bash on Windows 10/11
 #
 # What it does:
-#   - Installs Python 3.12 if missing
+#   - Installs Python 3.12 if missing (prefers Python.Python.3.12 via winget)
 #   - Installs/updates AI9 + upstream Manga-Colorizer source
 #   - Builds the deployed backend/extension tree
 #   - Detects RTX 30/40/50-series GPU
 #   - Selects an appropriate PyTorch CUDA wheel
 #   - Creates/reuses a venv and installs Python dependencies
-#   - Downloads/verifies generator.zip if missing
+#   - Downloads/verifies generator.zip (ZIP + optional SHA256) if missing
 #   - Runs AI9's real GPU kernel/cuDNN probe
 #   - Registers/starts the Windows Scheduled Task
-#   - Health-checks the backend
+#   - Health-checks the backend and runs an E2E colorize inference probe
+#   - Exits READY(0) / DEGRADED(2) / FAILED(1) — never prints ONLINE on failure
 #
 # Optional environment variables:
 #   AI9_INSTALL_DIR=/c/opt/manga-colorizer
@@ -151,38 +152,62 @@ if [[ -z "$GIT" ]]; then
 fi
 ok "Git: $("$GIT" --version)"
 
+# Preferred runtime is Python 3.12.x. 3.10/3.11 remain "usable" only so an
+# already-working older install can continue with a warning.
 python_is_usable() {
   local exe="$1"
-  "$exe" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1
+  "$exe" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
+}
+
+python_is_preferred() {
+  local exe="$1"
+  "$exe" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)' >/dev/null 2>&1
 }
 
 find_python() {
-  local p
+  local p preferred="" fallback=""
   for p in \
+    "/c/Users/${USERNAME:-}/AppData/Local/Programs/Python/Python312/python.exe" \
+    "/c/Program Files/Python312/python.exe" \
+    "$(command -v python3.12 2>/dev/null || true)" \
     "$(command -v python.exe 2>/dev/null || true)" \
     "$(command -v python 2>/dev/null || true)" \
-    "/c/Users/${USERNAME:-}/AppData/Local/Programs/Python/Python312/python.exe" \
-    "/c/Program Files/Python312/python.exe"
+    "/c/Users/${USERNAME:-}/AppData/Local/Programs/Python/Python311/python.exe" \
+    "/c/Users/${USERNAME:-}/AppData/Local/Programs/Python/Python310/python.exe" \
+    "/c/Program Files/Python311/python.exe" \
+    "/c/Program Files/Python310/python.exe"
   do
     [[ -n "$p" && -x "$p" ]] || continue
-    if python_is_usable "$p"; then
-      printf '%s\n' "$p"
-      return 0
+    python_is_usable "$p" || continue
+    if python_is_preferred "$p"; then
+      preferred="$p"
+      break
     fi
+    [[ -z "$fallback" ]] && fallback="$p"
   done
+  if [[ -n "$preferred" ]]; then
+    printf '%s\n' "$preferred"
+    return 0
+  fi
+  if [[ -n "$fallback" ]]; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
   return 1
 }
 
-log "OTACONSKEEP preflight: checking Python"
+log "OTACONSKEEP preflight: checking Python 3.12"
 PYTHON="$(find_python || true)"
 if [[ -z "$PYTHON" ]]; then
-  log "Python 3.10+ is missing; installing Python 3.12"
+  log "Python 3.12 is missing; installing Python.Python.3.12 via winget"
   winget_install "Python.Python.3.12"
   PYTHON="$(find_python || true)"
-  [[ -n "$PYTHON" ]] || die "Python installed but could not be located. What to do: close this window completely, then double-click install_ai9.bat again."
+  [[ -n "$PYTHON" ]] || die "Python 3.12 installed but could not be located. What to do: close this window completely, then double-click install_ai9.bat again."
+  python_is_preferred "$PYTHON" || die "Fresh install requires Python 3.12.x, but found: $("$PYTHON" --version 2>&1). What to do: install Python.Python.3.12 from winget, then rerun."
+elif ! python_is_preferred "$PYTHON"; then
+  warn "Preferred runtime is Python 3.12.x; found $("$PYTHON" --version 2>&1). Continuing with the existing interpreter because it is already usable (3.10+)."
 fi
 ok "Python: "$("$PYTHON" --version 2>&1)""
-
 # Find nvidia-smi. We intentionally do NOT install a CUDA Toolkit here:
 # PyTorch wheels bring their own CUDA runtime. The NVIDIA driver must exist.
 find_nvidia_smi() {
@@ -320,8 +345,9 @@ ok "venv: $VENV_DIR"
 "$VENV_PY" -m pip install --upgrade pip setuptools wheel
 
 log "Installing AI9 Python dependencies"
-"$VENV_PY" -m pip install -r "$(winpath "$INSTALL_DIR/backend/requirements.txt")"
-
+REQ_FILE="$INSTALL_DIR/backend/requirements-lock.txt"
+[[ -f "$REQ_FILE" ]] || REQ_FILE="$INSTALL_DIR/backend/requirements.txt"
+"$VENV_PY" -m pip install -r "$(winpath "$REQ_FILE")"
 if "$VENV_PY" -c "import einops" >/dev/null 2>&1; then
   ok "einops already installed"
 else
@@ -361,10 +387,62 @@ if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")"; then
 fi
 ok "GPU inference validation passed"
 
+CHECKSUMS_FILE="$INSTALL_DIR/backend/checksums.json"
+
+expected_sha256() {
+  local key="$1"
+  "$VENV_PY" - "$CHECKSUMS_FILE" "$key" <<'PY' 2>/dev/null || true
+import json, sys
+from pathlib import Path
+path, key = Path(sys.argv[1]), sys.argv[2]
+if not path.is_file():
+    raise SystemExit(0)
+data = json.loads(path.read_text(encoding="utf-8"))
+entry = (data.get("files") or {}).get(key) or {}
+print(str(entry.get("sha256") or "").strip())
+PY
+}
+
+sha256_is_published() {
+  local digest="$1"
+  case "$digest" in
+    ""|PENDING|pending|TODO|todo) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+file_sha256_hex() {
+  local file="$1"
+  "$VENV_PY" - "$(winpath "$file")" <<'PY'
+import hashlib, sys
+from pathlib import Path
+h = hashlib.sha256()
+with Path(sys.argv[1]).open("rb") as f:
+    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+}
+
+verify_published_sha256() {
+  local file="$1"
+  local expected="$2"
+  local label="$3"
+  sha256_is_published "$expected" || return 0
+  local actual
+  actual="$(file_sha256_hex "$file" | tr -d '\r\n' | tr 'A-F' 'a-f')"
+  expected="$(printf '%s' "$expected" | tr -d '\r\n' | tr 'A-F' 'a-f')"
+  [[ "$actual" == "$expected" ]] || {
+    warn "SHA256 mismatch for $label (got $actual, expected $expected)"
+    return 1
+  }
+  return 0
+}
+
 valid_generator_zip() {
   local file="$1"
   [[ -f "$file" ]] || return 1
-  "$VENV_PY" - "$(winpath "$file")" <<'PY' >/dev/null 2>&1
+  if ! "$VENV_PY" - "$(winpath "$file")" <<'PY' >/dev/null 2>&1
 import sys, zipfile
 try:
     with zipfile.ZipFile(sys.argv[1]) as z:
@@ -374,10 +452,54 @@ try:
 except Exception:
     raise SystemExit(1)
 PY
+  then
+    return 1
+  fi
+  local expected
+  expected="$(expected_sha256 "generator.zip")"
+  if sha256_is_published "$expected"; then
+    verify_published_sha256 "$file" "$expected" "generator.zip" || return 1
+  fi
+  return 0
+}
+
+download_generator_zip() {
+  local dest="$1"
+  if ! "$VENV_PY" -c "import gdown" >/dev/null 2>&1; then
+    "$VENV_PY" -m pip install gdown
+  fi
+  local tmp="$dest.part"
+  rm -f "$tmp"
+  "$VENV_PY" -m gdown \
+    "https://drive.google.com/uc?id=$GENERATOR_FILE_ID" \
+    -O "$(winpath "$tmp")"
+  mv -f "$tmp" "$dest"
+}
+
+ensure_generator_zip() {
+  local target="$1"
+  if valid_generator_zip "$target"; then
+    return 0
+  fi
+  if [[ -f "$target" ]]; then
+    warn "Removing invalid/corrupt generator.zip before retry"
+    rm -f "$target"
+  fi
+  log "Downloading generator.zip"
+  download_generator_zip "$target"
+  if valid_generator_zip "$target"; then
+    return 0
+  fi
+  warn "generator.zip failed verification; deleting and retrying download once"
+  rm -f "$target"
+  download_generator_zip "$target"
+  valid_generator_zip "$target" || \
+    die "generator.zip failed ZIP/SHA256 verification after one retry. Google Drive may have returned an error/quota page, or the published checksum does not match."
 }
 
 MODEL_BACKEND="$INSTALL_DIR/backend/networks/generator.zip"
 MODEL_PERSIST="$INSTALL_DIR/models/generator.zip"
+ASSETS_OK=1
 
 log "Checking AI9 neural weights"
 if valid_generator_zip "$MODEL_BACKEND"; then
@@ -391,33 +513,44 @@ elif valid_generator_zip "$MODEL_PERSIST"; then
   cp -f "$MODEL_PERSIST" "$MODEL_BACKEND"
   ok "Restored generator.zip from persisted model copy"
 else
-  log "Generator weights are missing; downloading the upstream checkpoint"
-  if ! "$VENV_PY" -c "import gdown" >/dev/null 2>&1; then
-    "$VENV_PY" -m pip install gdown
-  fi
-
-  TMP_MODEL="$INSTALL_DIR/models/generator.zip.part"
-  rm -f "$TMP_MODEL"
-  "$VENV_PY" -m gdown \
-    "https://drive.google.com/uc?id=$GENERATOR_FILE_ID" \
-    -O "$(winpath "$TMP_MODEL")"
-
-  valid_generator_zip "$TMP_MODEL" || \
-    die "Downloaded generator checkpoint is not a valid ZIP. Google Drive may have returned an error/quota page."
-
-  mv -f "$TMP_MODEL" "$MODEL_PERSIST"
-  mkdir -p "$(dirname "$MODEL_BACKEND")"
+  log "Generator weights are missing or failed integrity checks"
+  mkdir -p "$(dirname "$MODEL_PERSIST")" "$(dirname "$MODEL_BACKEND")"
+  ensure_generator_zip "$MODEL_PERSIST"
   cp -f "$MODEL_PERSIST" "$MODEL_BACKEND"
   ok "Generator weights downloaded and verified"
 fi
 
-# Sanity-check the two smaller upstream assets too.
-[[ -f "$INSTALL_DIR/backend/networks/RealESRGAN_x4plus_anime_6B.pt" ]] || \
-  die "Missing upstream RealESRGAN checkpoint."
-[[ -f "$INSTALL_DIR/backend/denoising/models/net_rgb.pth" ]] || \
-  die "Missing upstream denoiser checkpoint."
-ok "Bundled upscaler and denoiser assets present"
+verify_sidecar_asset() {
+  local file="$1"
+  local key="$2"
+  local label="$3"
+  if [[ ! -f "$file" ]]; then
+    die "Missing upstream $label ($file)."
+  fi
+  local expected
+  expected="$(expected_sha256 "$key")"
+  if sha256_is_published "$expected"; then
+    if ! verify_published_sha256 "$file" "$expected" "$label"; then
+      ASSETS_OK=0
+      die "SHA256 mismatch for $label. Existence alone is not enough when a digest is published. Re-sync upstream assets or update checksums.json."
+    fi
+    ok "$label present and SHA256 matches"
+  else
+    ok "$label present (SHA256 not published yet)"
+  fi
+}
 
+verify_sidecar_asset \
+  "$INSTALL_DIR/backend/networks/RealESRGAN_x4plus_anime_6B.pt" \
+  "RealESRGAN_x4plus_anime_6B.pt" \
+  "RealESRGAN_x4plus_anime_6B.pt"
+verify_sidecar_asset \
+  "$INSTALL_DIR/backend/denoising/models/net_rgb.pth" \
+  "denoising/models/net_rgb.pth" \
+  "net_rgb.pth"
+ok "Bundled upscaler and denoiser assets verified"
+BROWSER_STATUS="not_ready"
+FIREFOX_STATUS="skipped"
 if [[ "$INSTALL_FIREFOX" == "1" ]]; then
   FIREFOX_FOUND=0
   for f in \
@@ -428,10 +561,32 @@ if [[ "$INSTALL_FIREFOX" == "1" ]]; then
   done
   if [[ "$FIREFOX_FOUND" == "1" ]]; then
     ok "Firefox already installed"
+    FIREFOX_STATUS="installed"
   else
     log "Firefox is missing; installing it"
-    winget_install "Mozilla.Firefox"
+    if winget_install "Mozilla.Firefox"; then
+      FIREFOX_FOUND=0
+      for f in \
+        "/c/Program Files/Mozilla Firefox/firefox.exe" \
+        "/c/Program Files (x86)/Mozilla Firefox/firefox.exe"
+      do
+        [[ -x "$f" ]] && FIREFOX_FOUND=1
+      done
+      if [[ "$FIREFOX_FOUND" == "1" ]]; then
+        ok "Firefox installed"
+        FIREFOX_STATUS="installed"
+      else
+        warn "Firefox install was attempted but firefox.exe is not visible yet."
+        FIREFOX_STATUS="missing"
+      fi
+    else
+      warn "Firefox install via winget failed."
+      FIREFOX_STATUS="missing"
+    fi
   fi
+  # Temporary Add-on load cannot be automated; never claim browser READY.
+  BROWSER_STATUS="not_ready"
+  warn "Browser integration remains not_ready (Firefox temporary unsigned extension must be loaded manually)."
 fi
 
 if [[ "$REGISTER_TASK" == "1" ]]; then
@@ -451,34 +606,168 @@ for _ in $(seq 1 20); do
   sleep 2
 done
 
+INFERENCE_OK=0
 if [[ "$HEALTH_OK" == "1" ]]; then
   ok "Backend is healthy at https://127.0.0.1:5000/"
+  log "Running E2E inference probe against /colorize-image-data"
+  PROBE_PNG="$INSTALL_DIR/backend/testdata/installer_probe.png"
+  if [[ ! -f "$PROBE_PNG" ]]; then
+    warn "Missing installer probe image at $PROBE_PNG"
+  else
+    if "$VENV_PY" - "$(winpath "$PROBE_PNG")" <<'PY'
+import base64, json, ssl, sys, urllib.error, urllib.request
+from pathlib import Path
+
+try:
+    from PIL import Image
+    import io
+except Exception as exc:
+    print(f"PROBE_FAIL pillow import: {exc}")
+    raise SystemExit(1)
+
+probe = Path(sys.argv[1])
+raw = probe.read_bytes()
+img = Image.open(io.BytesIO(raw))
+w, h = img.size
+if w <= 0 or h <= 0:
+    print("PROBE_FAIL invalid probe dimensions")
+    raise SystemExit(1)
+
+payload = {
+    "imgName": "installer-probe",
+    "imgData": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
+    "imgWidth": w,
+    "imgHeight": h,
+    "colorize": True,
+    "denoise": False,
+    "upscale": False,
+    "cache": False,
+}
+req = urllib.request.Request(
+    "https://127.0.0.1:5000/colorize-image-data",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+ctx = ssl._create_unverified_context()
+try:
+    with urllib.request.urlopen(req, context=ctx, timeout=300) as resp:
+        status = getattr(resp, "status", None) or resp.getcode()
+        body = resp.read()
+except Exception as exc:
+    print(f"PROBE_FAIL request: {exc}")
+    raise SystemExit(1)
+
+if int(status) < 200 or int(status) >= 300:
+    print(f"PROBE_FAIL http {status}")
+    raise SystemExit(1)
+
+try:
+    data = json.loads(body.decode("utf-8"))
+except Exception as exc:
+    print(f"PROBE_FAIL json: {exc}")
+    raise SystemExit(1)
+
+color = data.get("colorImgData") or ""
+if not color or "," not in color:
+    print(f"PROBE_FAIL missing colorImgData: {data!r}"[:500])
+    raise SystemExit(1)
+meta, b64 = color.split(",", 1)
+try:
+    out_bytes = base64.b64decode(b64)
+    out = Image.open(io.BytesIO(out_bytes))
+    out.load()
+except Exception as exc:
+    print(f"PROBE_FAIL decode image: {exc}")
+    raise SystemExit(1)
+ow, oh = out.size
+if ow <= 0 or oh <= 0:
+    print(f"PROBE_FAIL bad output size {ow}x{oh}")
+    raise SystemExit(1)
+print(f"PROBE_OK {ow}x{oh}")
+raise SystemExit(0)
+PY
+    then
+      INFERENCE_OK=1
+      ok "E2E inference probe passed"
+    else
+      warn "E2E inference probe failed"
+    fi
+  fi
 else
-  warn "Install finished, but the backend health check did not answer yet."
+  warn "Backend health check did not answer."
   warn "Check: $INSTALL_DIR/logs/"
 fi
 
-LAN_IP="$(powershell.exe -NoProfile -Command \
-  "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -notmatch '^(127\.|169\.254\.)' -and \$_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1 -ExpandProperty IPAddress)" \
-  2>/dev/null | tr -d '\r' || true)"
+# Status model: READY (0) / DEGRADED (2) / FAILED (1)
+GPU_OK=1
+INSTALL_STATUS="READY"
+EXIT_CODE=0
+
+if [[ "$ASSETS_OK" != "1" || "$HEALTH_OK" != "1" || "$INFERENCE_OK" != "1" ]]; then
+  INSTALL_STATUS="FAILED"
+  EXIT_CODE=1
+elif [[ "$INSTALL_FIREFOX" == "1" && "$FIREFOX_STATUS" == "missing" ]]; then
+  INSTALL_STATUS="DEGRADED"
+  EXIT_CODE=2
+fi
+
+# Bind defaults to 0.0.0.0 in app-stream.py; only advertise LAN URL when that is true.
+BACKEND_BIND="0.0.0.0"
+LAN_IP=""
+if [[ "$BACKEND_BIND" == "0.0.0.0" ]]; then
+  LAN_IP="$(powershell.exe -NoProfile -Command \
+    "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -notmatch '^(127\.|169\.254\.)' -and \$_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1 -ExpandProperty IPAddress)" \
+    2>/dev/null | tr -d '\r' || true)"
+fi
 
 printf '\n\033[1;35m============================================================\033[0m\n'
-printf '\033[1;35m ANTONIO G. GARCIA // OTACONSKEEP :: AI9 ONLINE\033[0m\n'
+case "$INSTALL_STATUS" in
+  READY)
+    printf '\033[1;35m ANTONIO G. GARCIA // OTACONSKEEP :: AI9 ONLINE\033[0m\n'
+    printf '\033[1;32m Status         : READY\033[0m\n'
+    ;;
+  DEGRADED)
+    printf '\033[1;33m ANTONIO G. GARCIA // OTACONSKEEP :: AI9 DEGRADED\033[0m\n'
+    printf '\033[1;33m Status         : DEGRADED\033[0m\n'
+    ;;
+  *)
+    printf '\033[1;31m ANTONIO G. GARCIA // OTACONSKEEP :: AI9 FAILED\033[0m\n'
+    printf '\033[1;31m Status         : FAILED\033[0m\n'
+    ;;
+esac
 printf '\033[0;37m                 Built for the Keep.\033[0m\n'
 printf '\033[1;35m============================================================\033[0m\n'
 printf 'Install folder : %s\n' "$INSTALL_DIR"
 printf 'GPU            : %s\n' "$GPU_NAME"
 printf 'PyTorch CUDA   : %s (%s)\n' "$TORCH_CUDA" "$TORCH_FLAVOR"
+printf 'GPU check      : %s\n' "$([[ "$GPU_OK" == "1" ]] && echo pass || echo fail)"
+printf 'Asset integrity: %s\n' "$([[ "$ASSETS_OK" == "1" ]] && echo pass || echo fail)"
+printf 'Backend health : %s\n' "$([[ "$HEALTH_OK" == "1" ]] && echo pass || echo fail)"
+printf 'E2E inference  : %s\n' "$([[ "$INFERENCE_OK" == "1" ]] && echo pass || echo fail)"
+printf 'Browser integ. : %s (temporary extension cannot be auto-loaded)\n' "$BROWSER_STATUS"
+printf 'Firefox        : %s\n' "$FIREFOX_STATUS"
 printf 'Local API      : https://127.0.0.1:5000/\n'
-if [[ -n "$LAN_IP" ]]; then
-  printf 'LAN API        : https://%s:5000/\n' "$LAN_IP"
+if [[ "$BACKEND_BIND" == "0.0.0.0" && -n "$LAN_IP" ]]; then
+  printf 'LAN API        : https://%s:5000/ (server bind %s)\n' "$LAN_IP" "$BACKEND_BIND"
 fi
 printf 'Logs           : %s\n' "$INSTALL_DIR/logs"
+printf 'Doctor         : "%s" "%s"\n' \
+  "$(winpath "$VENV_PY")" \
+  "$(winpath "$INSTALL_DIR/tools/ai9_doctor.py")"
+
+printf '\n\033[1;36mHTTPS note:\033[0m The backend uses a self-signed certificate.\n'
+printf '  Your browser / OS will require a one-time trust decision for\n'
+printf '  https://127.0.0.1:5000/ (and the LAN URL if you use it).\n'
+printf '  This does not mean the connection is publicly trusted or that\n'
+printf '  traffic to other hosts is secured — only that this local AI9\n'
+printf '  endpoint can speak HTTPS after you accept its cert.\n'
 
 MANIFEST_WINPATH="$(winpath "$INSTALL_DIR/extension/manifest.json")"
 printf '\n\033[1;33m============================================================\033[0m\n'
 printf '\033[1;33m ONE LAST STEP (a browser cannot do this part automatically):\033[0m\n'
 printf '\033[1;33m============================================================\033[0m\n'
+printf '  Browser integration status: \033[1;33mnot_ready\033[0m until you complete this.\n'
 printf '  1. Open the Firefox browser (not any other browser).\n'
 printf '  2. Click the address bar at the top, type this exactly, and press Enter:\n'
 printf '       \033[1;36mabout:debugging#/runtime/this-firefox\033[0m\n'
@@ -493,4 +782,13 @@ printf '\n  Note: Firefox forgets this extension every time it fully restarts,\n
 printf '  since it is unsigned. If colorizing stops working after a Firefox\n'
 printf '  restart, just repeat steps 1-4 above -- it takes 30 seconds.\n'
 printf '\n[ANTONIO G. GARCIA] Rerunning this installer is safe; completed steps are reused/skipped where possible.\n'
-printf '[ANTONIO G. GARCIA] AI9 deployment complete. Welcome to the Keep.\n'
+printf '[ANTONIO G. GARCIA] Post-install doctor: tools/ai9_doctor.py (GPU, models/hashes, port 5000, /healthz, extension note).\n'
+if [[ "$INSTALL_STATUS" == "READY" ]]; then
+  printf '[ANTONIO G. GARCIA] AI9 deployment READY. Welcome to the Keep.\n'
+elif [[ "$INSTALL_STATUS" == "DEGRADED" ]]; then
+  printf '[ANTONIO G. GARCIA] AI9 core is up but the install is DEGRADED (see Firefox/browser notes above).\n'
+else
+  printf '[ANTONIO G. GARCIA] AI9 deployment FAILED. Health and/or E2E inference did not pass — not marking ONLINE.\n'
+fi
+
+exit "$EXIT_CODE"

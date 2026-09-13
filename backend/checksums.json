@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "description": "Expected SHA-256 digests for installer-managed model assets. Use an empty string or PENDING until a digest is published; the installer then skips digest checks for that asset.",
+  "files": {
+    "generator.zip": {
+      "relative_path": "networks/generator.zip",
+      "sha256": "PENDING"
+    },
+    "RealESRGAN_x4plus_anime_6B.pt": {
+      "relative_path": "networks/RealESRGAN_x4plus_anime_6B.pt",
+      "sha256": "PENDING"
+    },
+    "denoising/models/net_rgb.pth": {
+      "relative_path": "denoising/models/net_rgb.pth",
+      "sha256": "PENDING"
+    }
+  }
+}

@@ -1,30 +1,20 @@
-Flask
-Flask_Cors
-matplotlib
-numpy
-opencv_python_headless
-scikit_image
+# AI9 backend deps (PyTorch installed separately by the installer / README).
+# Prefer backend/requirements-lock.txt when present (install_ai9.sh does).
+Flask>=3.0,<3.2
+Flask-Cors>=4.0,<7.0
+matplotlib>=3.8,<3.11
+numpy>=1.26,<2.3
+opencv-python-headless>=4.8,<4.13
+Pillow>=10.0,<12.0
+scikit-image>=0.22,<0.27
 # torch
 # torchvision
-# Instead of including PyTorch in this file, 
+# Instead of including PyTorch in this file,
 # first install the other requirements above with:
-# pip install -r requirements.txt
+# pip install -r requirements-lock.txt
 # Next, you should choose which PyTorch to install.
 # The most future-proof method is to go to the PyTorch site:
 # https://pytorch.org/get-started/locally/
 # and choose Stable, your OS, Pip, Python,
-# CUDA if you have an nVidia GPU or CPU if not,
-# (I don't know if it matters which CUDA version.)
-# The command line they give will include torchaudio.
-# You don't need that so you can remove it from the command before running.
-# Run the pip command they give.
-# pip3 should be the same as pip, so use either.
-
-# If you don't want to use pytorch.org,
-# these are the current (April 2024) commands to run:
-# Mac or Windows without CUDA or Linux *with* CUDA uses the default:
-# pip install torch torchvision 
-# Windows with CUDA:
-# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-# Linux without CUDA:
-# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# CUDA if you have an nVidia GPU or CPU if not.
+# Run the pip command they give (torchaudio is optional).

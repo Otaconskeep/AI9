@@ -1,0 +1,9 @@
+# Reasonable lower/upper pins for the AI9 backend (Python 3.12).
+# PyTorch / torchvision are installed separately by install_ai9.sh.
+Flask>=3.0,<3.2
+Flask-Cors>=4.0,<7.0
+matplotlib>=3.8,<3.11
+numpy>=1.26,<2.3
+opencv-python-headless>=4.8,<4.13
+Pillow>=10.0,<12.0
+scikit-image>=0.22,<0.27
