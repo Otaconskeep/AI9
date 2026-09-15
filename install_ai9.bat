@@ -1,16 +1,16 @@
-﻿@echo off
+@echo off
 REM ============================================================
 REM  install_ai9.bat  /  public download name: AI9-Setup.bat
-REM  Lone Downloads\ entry - fetches install_ai9.sh if needed,
+REM  Lone Downloads entry - fetches install_ai9.sh if needed,
 REM  finds/installs Git Bash, then runs the real installer.
 REM  Double-click this file. Do NOT type the filename in CMD.
 REM ============================================================
 setlocal EnableExtensions EnableDelayedExpansion
 title AI9 Setup
 
-REM --- encoding check (same class of failure as Otacon Setup) ---
+REM --- encoding check: reject UTF-16 Save-As corruption; ASCII/UTF-8 OK ---
 set "AI9_SETUP_SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $p = $env:AI9_SETUP_SELF; if ([string]::IsNullOrWhiteSpace($p)) { Write-Host 'ERROR: installer path missing'; exit 2 }; if (-not (Test-Path -LiteralPath $p)) { Write-Host 'ERROR: installer file not found'; exit 2 }; $b = [IO.File]::ReadAllBytes($p); if ($b.Length -lt 8) { Write-Host 'ERROR: installer file empty'; exit 2 }; if ($b[0] -eq 255 -and $b[1] -eq 254) { Write-Host 'ERROR: UTF-16 encoding'; exit 3 }; if ($b[0] -eq 254 -and $b[1] -eq 255) { Write-Host 'ERROR: UTF-16 encoding'; exit 3 }; if (-not ($b[0] -eq 239 -and $b[1] -eq 187 -and $b[2] -eq 191)) { Write-Host 'ERROR: missing UTF-8 BOM. Re-download from the Otaconskeep website.'; exit 4 }; exit 0 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $p = $env:AI9_SETUP_SELF; if ([string]::IsNullOrWhiteSpace($p)) { Write-Host 'ERROR: installer path missing'; exit 2 }; if (-not (Test-Path -LiteralPath $p)) { Write-Host 'ERROR: installer file not found'; exit 2 }; $b = [IO.File]::ReadAllBytes($p); if ($b.Length -lt 8) { Write-Host 'ERROR: installer file empty'; exit 2 }; if ($b[0] -eq 255 -and $b[1] -eq 254) { Write-Host 'ERROR: UTF-16 encoding'; exit 3 }; if ($b[0] -eq 254 -and $b[1] -eq 255) { Write-Host 'ERROR: UTF-16 encoding'; exit 3 }; if ($b[0] -eq 239 -and $b[1] -eq 187 -and $b[2] -eq 191) { exit 0 }; if ($b[0] -eq 64) { exit 0 }; Write-Host 'ERROR: damaged encoding. Re-download from the Otaconskeep website.'; exit 4 }"
 if errorlevel 1 goto ENC_FAIL
 goto ENC_OK
 :ENC_FAIL
@@ -55,9 +55,12 @@ echo  Double-clicked correctly. Preparing files...
 echo  Do not close this window.
 echo.
 
-REM Prefer a full checkout beside this .bat; otherwise use AppData work dir.
-set "WORK=%SCRIPT_DIR%"
-if exist "%SCRIPT_DIR%\install_ai9.sh" goto HAVE_SH
+REM Git checkout dev path: run the .sh beside this .bat when inside the repo.
+set "WORK=%INST%"
+if exist "%SCRIPT_DIR%\.git\HEAD" if exist "%SCRIPT_DIR%\install_ai9.sh" (
+    set "WORK=%SCRIPT_DIR%"
+    goto HAVE_SH
+)
 
 if not exist "%INST%" mkdir "%INST%" >nul 2>&1
 set "WORK=%INST%"
@@ -91,7 +94,7 @@ if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles%\Git\bin\
 if not defined BASH_EXE if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles(x86)%\Git\bin\bash.exe"
 if not defined BASH_EXE if exist "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" set "BASH_EXE=%LOCALAPPDATA%\Programs\Git\bin\bash.exe"
 
-REM Do NOT use bare "where bash" — that often hits the WSL stub, which AI9 refuses.
+REM Do NOT use bare "where bash" - that often hits the WSL stub, which AI9 refuses.
 if not defined BASH_EXE (
     echo  Git Bash not found. Installing Git for Windows via winget...
     where winget.exe >nul 2>nul
@@ -132,7 +135,7 @@ if "!RC!"=="0" (
 ) else (
     echo  AI9 setup stopped with exit code !RC!.
     echo  Read the messages above. Fix the issue, then double-click
-    echo  this same Setup file again — it resumes safely.
+    echo  this same Setup file again - it resumes safely.
 )
 echo ============================================================
 echo.

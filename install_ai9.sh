@@ -230,8 +230,21 @@ NVIDIA_SMI="$(find_nvidia_smi || true)"
 GPU_NAME="$("$NVIDIA_SMI" --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1 | tr -d '\r')"
 [[ -n "$GPU_NAME" ]] || die "Could not identify the NVIDIA GPU with nvidia-smi."
 
-CUDA_MAX="$("$NVIDIA_SMI" 2>/dev/null | sed -nE 's/.*CUDA Version: ([0-9]+\.[0-9]+).*/\1/p' | head -n1 | tr -d '\r')"
-[[ -n "$CUDA_MAX" ]] || die "Could not read the driver's maximum CUDA version from nvidia-smi."
+read_cuda_max() {
+  local smi="$1" raw v
+  # On some Windows drivers the banner (with CUDA Version) lands on stderr.
+  raw="$("$smi" 2>&1 | tr -d '\r')"
+  v="$(printf '%s\n' "$raw" | sed -nE 's/.*[Cc][Uu][Dd][Aa][[:space:]]+[Vv]ersion[^0-9]*([0-9]+(\.[0-9]+)?).*/\1/p' | head -n1)"
+  [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
+  v="$(printf '%s\n' "$raw" | grep -i 'cuda version' | sed -nE 's/.*([0-9]+(\.[0-9]+)?).*/\1/p' | head -n1)"
+  [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
+  v="$("$smi" -q 2>/dev/null | sed -nE 's/^[[:space:]]*CUDA Version[^0-9]*:?[[:space:]]*([0-9]+(\.[0-9]+)?).*/\1/p' | head -n1 | tr -d '\r')"
+  [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
+  return 1
+}
+
+CUDA_MAX="$(read_cuda_max "$NVIDIA_SMI" || true)"
+[[ -n "$CUDA_MAX" ]] || die "Could not read the driver's maximum CUDA version from nvidia-smi. What to do: open Command Prompt, run nvidia-smi, and confirm it prints a CUDA Version line. If it does not, install or update your NVIDIA GPU driver from https://www.nvidia.com/download/index.aspx, restart, then double-click AI9 Setup again."
 
 case "$GPU_NAME" in
   *"RTX 50"*)
