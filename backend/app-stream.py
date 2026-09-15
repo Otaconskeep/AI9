@@ -5,8 +5,6 @@ import json
 import random
 import threading
 import time
-import urllib.error
-import urllib.request
 import os
 import gc
 import hashlib
@@ -16,18 +14,24 @@ import cv2
 import PIL.Image
 import numpy as np
 from flask import Flask, request, jsonify, abort
-from flask_cors import CORS
 
 import color_adjust
 from denoisator import MangaDenoiser
 from colorizator import MangaColorizator
 from upscalator import MangaUpscaler
-from utils.utils import distance_from_grayscale, generate_random_id, \
+from utils.utils import generate_random_id, \
     load_image_as_base64, save_image, sanitize_string, clear_torch_cache
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Localhost-only service talked to by the Firefox extension via host_permissions.
+# Do NOT enable open CORS — arbitrary web origins must not drive the GPU API.
+app.config["MAX_CONTENT_LENGTH"] = 48 * 1024 * 1024  # 48 MiB JSON body cap
+
+# Reject absurd pages before GPU / large tensor allocation. Tall webtoon
+# strips are allowed; multi-hundred-megapixel bombs are not.
+MAX_IMAGE_SIDE = 16384
+MAX_IMAGE_PIXELS = 80_000_000
 
 
 @app.route('/')
@@ -44,15 +48,34 @@ def healthz():
     })
 
 
+def _reject_image_dimensions(width: int, height: int):
+    if width <= 0 or height <= 0:
+        abort(400, description='Invalid image dimensions')
+    if width > MAX_IMAGE_SIDE or height > MAX_IMAGE_SIDE:
+        abort(413, description=f'Image side length exceeds {MAX_IMAGE_SIDE}px limit')
+    if width * height > MAX_IMAGE_PIXELS:
+        abort(413, description=f'Image pixel count exceeds {MAX_IMAGE_PIXELS} limit')
+
+
 @app.route('/colorize-image-data', methods=['POST'])
 def colorize_image_data():
     rid = generate_random_id()
     note_activity()
 
     try:
-        req_json = request.get_json()
+        req_json = request.get_json(silent=True)
+        if not isinstance(req_json, dict):
+            abort(400, description='Expected JSON object body')
+
         img_name = req_json.get('imgName', f'Image-{rid}')
-        img_url = req_json.get('imgURL', '')
+        # imgURL is intentionally ignored. Server-side URL fetch was an SSRF
+        # vector; the Firefox extension must send image bytes as imgData
+        # (including the tainted-canvas path, which fetches in-extension).
+        if req_json.get('imgURL') and not req_json.get('imgData'):
+            abort(
+                400,
+                description='imgURL is not supported; send image bytes as imgData',
+            )
         img_data = req_json.get('imgData')
         img_width = req_json.get('imgWidth', -1)
         img_height = req_json.get('imgHeight', -1)
@@ -81,17 +104,30 @@ def colorize_image_data():
             print(f'[-] [{rid}] upscaleFactor=2 is unsupported by this checkpoint, using 4')
             upscale_factor = 4
 
+        # Client-declared dimensions: cheap reject before base64 decode work.
+        try:
+            declared_w = int(img_width) if img_width is not None else -1
+            declared_h = int(img_height) if img_height is not None else -1
+        except (TypeError, ValueError):
+            declared_w, declared_h = -1, -1
+        if declared_w > 0 and declared_h > 0:
+            _reject_image_dimensions(declared_w, declared_h)
+
         ensure_components_loaded(rid)
 
-        if img_data:
-            img_metadata, img_data64 = img_data.split(',', 1)
-            orig_image_binary = base64.decodebytes(bytes(img_data64, encoding='utf-8'))
-        elif img_url:  # Could not find imgData, look for imgURL instead
-            orig_image_binary = retrieve_image_binary(rid, request, img_url)
-        else:
-            msg = 'Neither imgData nor imgURL found in the request'
+        if not img_data or not isinstance(img_data, str):
+            msg = 'imgData is required'
             print(f'[-] [{rid}] {msg}')
-            return jsonify({'msg': f'Image: {img_name}, Error: {msg}'})
+            return jsonify({'msg': f'Image: {img_name}, Error: {msg}'}), 400
+
+        if ',' in img_data:
+            _img_metadata, img_data64 = img_data.split(',', 1)
+        else:
+            img_data64 = img_data
+        try:
+            orig_image_binary = base64.decodebytes(bytes(img_data64, encoding='utf-8'))
+        except Exception:
+            abort(400, description='imgData is not valid base64')
 
         content_hash = hashlib.sha256(orig_image_binary).hexdigest()[:32]
         model_opts = options_fingerprint(colorize, upscale, denoise, denoise_sigma, upscale_factor)
@@ -115,16 +151,18 @@ def colorize_image_data():
 
         if raw_image is None:
             imgio = io.BytesIO(orig_image_binary)
-            image = PIL.Image.open(imgio)
+            # Bound Pillow decompression bombs independently of our pixel cap.
+            PIL.Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+            try:
+                image = PIL.Image.open(imgio)
+                image.load()
+            except PIL.Image.DecompressionBombError:
+                abort(413, description='Image exceeds decompression / pixel limits')
+            except Exception:
+                abort(400, description='Unable to decode imgData as an image')
             image = np.array(image.convert('RGB'))
             orig_h, orig_w = image.shape[:2]
-
-            if not img_data:
-                coloredness = distance_from_grayscale(PIL.Image.fromarray(image))
-                print(f'[+] [{rid}] Image distance from grayscale: {coloredness}')
-                if coloredness > 1:
-                    print(f'[+] [{rid}] Image already colored: {coloredness}')
-                    return jsonify({'msg': f'Image: {img_name}, Already colored: {coloredness} > 1'})
+            _reject_image_dimensions(orig_w, orig_h)
 
             print(f'[+] [{rid}] Requested image: {img_name}, Width: {img_width}, Height: {img_height}, hash={content_hash[:12]}')
             print(f'[+] [{rid}] Colorize: {colorize}, Upscale: {upscale}{f"(x{upscale_factor})" if upscale else ""}, Denoise: {denoise}')
@@ -278,35 +316,6 @@ def check_model_availability(rid, requested, available, name):
         print(f'[-] [{rid}] Requested {name}, but model is not initialized, please run the server without --no-{name}')
 
 
-def retrieve_image_binary(rid, original_request, url):
-    user_agent = original_request.headers.get('User-Agent', '')
-    referer = request.referrer if request.referrer else ''
-    origin = request.origin if request.origin else ''
-
-    referer = referer if referer else origin
-    origin = origin if origin else referer
-
-    headers = {
-        'User-Agent': user_agent,
-        'Referer': referer,
-        'Origin': origin,
-        'Accept': 'image/png;q=1.0,image/jpg;q=0.9,image/webp;q=0.7,image/*;q=0.5',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'identity'
-    }
-
-    print(f'[*] Retrieving image from url={url}')
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        return urllib.request.urlopen(req).read()
-    except urllib.error.URLError as e:
-        print(f'[!] [{rid}] URLError: {e.reason}')
-        abort(500)
-    except os.error as ex:
-        print(f'[!] [{rid}] Retrieve error: {ex}')
-    return False
-
-
 def denoise_image(rid, image, denoiser, sigma):
     start_time = time.time()
     denoised_image = denoiser.denoise(image, sigma)
@@ -399,7 +408,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run Manga Colorizer server')
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda', help='Device to use')
     parser.add_argument('--port', type=int, default=5000, help='Port to listen on')
-    parser.add_argument('--host', default='0.0.0.0', help='Host/interface to bind')
+    parser.add_argument(
+        '--host',
+        default='127.0.0.1',
+        help='Interface to bind (default: 127.0.0.1 localhost-only)',
+    )
 
     parser.add_argument('--colorizer_path', default='networks/generator.zip')
     parser.add_argument('--extractor_path', default='networks/extractor.pth')
@@ -434,6 +447,7 @@ if __name__ == '__main__':
     config.cache_root = config.cache_root or str((backend_dir.parent / 'cache').resolve())
     os.makedirs(config.cache_root, exist_ok=True)
     print(f'[+] Cache root: {config.cache_root}')
+    print(f'[+] Bind: {config.host}:{config.port}')
     print(f'[+] Default upscale: {config.upscale} (per-request "upscale" flag can override)')
     print(f'[+] Idle VRAM unload after: {config.idle_unload_seconds}s')
 
@@ -443,8 +457,11 @@ if __name__ == '__main__':
     watchdog.start()
 
     if config.ssl:
-        ssl_dir = backend_dir / 'ssl'
-        context = (str(ssl_dir / 'server.crt'), str(ssl_dir / 'server.key'))
-        app.run(host=config.host, port=config.port, ssl_context=context)
+        from ensure_ssl import ensure_ssl
+        crt_path, key_path = ensure_ssl(backend_dir / 'ssl')
+        # Never log key contents — only confirm filenames.
+        print(f'[+] TLS: {crt_path.name} + {key_path.name}')
+        context = (str(crt_path), str(key_path))
+        app.run(host=config.host, port=config.port, ssl_context=context, threaded=True)
     else:
-        app.run(host=config.host, port=config.port)
+        app.run(host=config.host, port=config.port, threaded=True)

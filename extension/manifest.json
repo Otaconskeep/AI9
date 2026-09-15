@@ -1,7 +1,7 @@
 {
   "name": "Manga Colorizer (AI9)",
-  "version": "0.6.0",
-  "description": "Automatic local-GPU manga colorization for Crunchyroll Manga and other reader sites, backed by AI9's RTX 5070 Ti.",
+  "version": "0.6.1",
+  "description": "Automatic local-GPU manga colorization for Crunchyroll Manga and other reader sites, backed by AI9.",
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
     "https://www.crunchyroll.com/*",
@@ -15,8 +15,7 @@
     "*://manhuatop.org/*",
     "*://manhuaus.com/*",
     "*://mangapill.com/*",
-    "https://127.0.0.1/*",
-    "https://192.168.50.162/*"
+    "https://127.0.0.1/*"
   ],
   "optional_host_permissions": ["*://*/*"],
 

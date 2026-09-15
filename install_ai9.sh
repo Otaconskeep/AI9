@@ -355,7 +355,7 @@ fi
 [[ -x "$VENV_PY" ]] || die "venv creation failed."
 ok "venv: $VENV_DIR"
 
-"$VENV_PY" -m pip install --upgrade pip setuptools wheel
+"$VENV_PY" -m pip install --upgrade "pip" "setuptools>=70,<82" "wheel"
 
 log "Installing AI9 Python dependencies"
 REQ_FILE="$INSTALL_DIR/backend/requirements-lock.txt"
@@ -389,6 +389,10 @@ else
     --index-url "https://download.pytorch.org/whl/$TORCH_FLAVOR"
 fi
 
+# Torch 2.11+ declares setuptools<82; keep the pin even if a wheel pulled newer.
+"$VENV_PY" -m pip install --upgrade "setuptools>=70,<82" >/dev/null
+ok "setuptools pinned to Torch-compatible range (<82)"
+
 log "Antonio G. Garcia GPU trial: verifying CUDA kernels and cuDNN"
 if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")"; then
   warn "GPU probe failed once. Reinstalling the selected PyTorch build cleanly and retrying."
@@ -399,6 +403,10 @@ if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")"; then
     die "GPU validation still failed. The likely cause is an NVIDIA driver/PyTorch architecture mismatch."
 fi
 ok "GPU inference validation passed"
+
+log "Ensuring per-install TLS certificate (unique; never reused from Git)"
+"$VENV_PY" "$(winpath "$INSTALL_DIR/backend/ensure_ssl.py")" "$(winpath "$INSTALL_DIR/backend/ssl")"
+ok "TLS materials ready under backend/ssl/ (private key is not logged)"
 
 CHECKSUMS_FILE="$INSTALL_DIR/backend/checksums.json"
 
@@ -725,15 +733,7 @@ elif [[ "$INSTALL_FIREFOX" == "1" && "$FIREFOX_STATUS" == "missing" ]]; then
   EXIT_CODE=2
 fi
 
-# Bind defaults to 0.0.0.0 in app-stream.py; only advertise LAN URL when that is true.
-BACKEND_BIND="0.0.0.0"
-LAN_IP=""
-if [[ "$BACKEND_BIND" == "0.0.0.0" ]]; then
-  LAN_IP="$(powershell.exe -NoProfile -Command \
-    "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -notmatch '^(127\.|169\.254\.)' -and \$_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1 -ExpandProperty IPAddress)" \
-    2>/dev/null | tr -d '\r' || true)"
-fi
-
+# Production default is localhost-only (127.0.0.1). Do not advertise LAN URLs.
 printf '\n\033[1;35m============================================================\033[0m\n'
 case "$INSTALL_STATUS" in
   READY)
@@ -761,20 +761,19 @@ printf 'E2E inference  : %s\n' "$([[ "$INFERENCE_OK" == "1" ]] && echo pass || e
 printf 'Browser integ. : %s (temporary extension cannot be auto-loaded)\n' "$BROWSER_STATUS"
 printf 'Firefox        : %s\n' "$FIREFOX_STATUS"
 printf 'Local API      : https://127.0.0.1:5000/\n'
-if [[ "$BACKEND_BIND" == "0.0.0.0" && -n "$LAN_IP" ]]; then
-  printf 'LAN API        : https://%s:5000/ (server bind %s)\n' "$LAN_IP" "$BACKEND_BIND"
-fi
 printf 'Logs           : %s\n' "$INSTALL_DIR/logs"
 printf 'Doctor         : "%s" "%s"\n' \
   "$(winpath "$VENV_PY")" \
   "$(winpath "$INSTALL_DIR/tools/ai9_doctor.py")"
 
-printf '\n\033[1;36mHTTPS note:\033[0m The backend uses a self-signed certificate.\n'
+printf '\n\033[1;36mHTTPS note:\033[0m The backend uses a per-install self-signed certificate\n'
+printf '  (generated uniquely on this PC; not shared across installs).\n'
 printf '  Your browser / OS will require a one-time trust decision for\n'
-printf '  https://127.0.0.1:5000/ (and the LAN URL if you use it).\n'
-printf '  This does not mean the connection is publicly trusted or that\n'
-printf '  traffic to other hosts is secured — only that this local AI9\n'
-printf '  endpoint can speak HTTPS after you accept its cert.\n'
+printf '  https://127.0.0.1:5000/.\n'
+printf '  This does not mean the connection is publicly trusted — only that\n'
+printf '  this local AI9 endpoint can speak HTTPS after you accept its cert.\n'
+printf '  The API listens on localhost only; other machines on your LAN cannot\n'
+printf '  reach it.\n'
 
 MANIFEST_WINPATH="$(winpath "$INSTALL_DIR/extension/manifest.json")"
 printf '\n\033[1;33m============================================================\033[0m\n'

@@ -118,7 +118,7 @@ Firefox tab (manga site)
    │  contentScript.js watches the DOM (MutationObserver + History API hook)
    │  for new/changed <img> or <canvas> page elements
    ▼
-POST https://<GPU host>:5000/colorize-image-data
+POST https://127.0.0.1:5000/colorize-image-data
    │  { imgData: <base64 PNG>, denoise, colorize, upscale, cache, ... }
    ▼
 Flask server (app-stream.py) on the GPU machine
@@ -304,29 +304,28 @@ Start-Sleep 12
 curl.exe -sk https://127.0.0.1:5000/   # should be back up
 ```
 
-### 7. Find your reachable IP and confirm LAN access
+### 7. Confirm localhost-only API
+
+AI9 listens on **127.0.0.1 only** by default. Other devices on your LAN
+cannot reach the colorizer API. That is intentional.
 
 ```powershell
-Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' }
+Get-NetTCPConnection -LocalPort 5000 | Select-Object LocalAddress,LocalPort,State
+# Expect LocalAddress = 127.0.0.1
+curl.exe -sk https://127.0.0.1:5000/
+curl.exe -sk https://127.0.0.1:5000/healthz
 ```
 
-Then from another device on the LAN (or the same machine via its LAN IP,
-not `127.0.0.1`):
-
-```
-https://<that-ip>:5000/
-```
-
-You'll get a self-signed certificate warning. That's expected (see
-Limitations). Accept it once.
+Remote / LAN operation is **not enabled**. A future opt-in would need
+authentication, scoped firewall rules, and restricted CORS — do not
+re-bind to `0.0.0.0` casually.
 
 ### 8. Install the Firefox extension
 
 1. `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
    select `extension/manifest.json`.
-2. Open the extension popup, confirm the **API URL** field points at your
-   server (`https://127.0.0.1:5000/` if Firefox runs on the same machine as
-   the GPU, otherwise the LAN IP from step 7).
+2. Open the extension popup, confirm the **API URL** field is
+   `https://127.0.0.1:5000/` (the default).
 3. Click **Test**, accept the certificate warning once, confirm you see
    "Manga Colorizer is Up and Running!"
 4. Your target site should already be in the **Manga Sites** box
@@ -358,7 +357,7 @@ an earlier page/chapter and confirm it comes back instantly from cache
 | Flag | Default | Notes |
 |---|---|---|
 | `--port` | 5000 | check it's free first: `Test-NetConnection -ComputerName localhost -Port 5000` or a quick Python socket bind test |
-| `--host` | 0.0.0.0 | binds all interfaces so LAN clients can reach it |
+| `--host` | 127.0.0.1 | localhost-only; production supervisor passes this explicitly |
 | `--upscale` | off | AI 4x super-resolution; off by default. When off, output is still resized to the original page's exact dimensions via a plain (non-generative) `cv2.INTER_LANCZOS4` resize, not left at the model's fixed ~576px internal generation size |
 | `--upscale_factor` | 4 | 2x is **not supported** by the bundled RealESRGAN checkpoint (its architecture is fixed-4x; the tile-placement math for scale=2 is broken upstream), so the server auto-promotes any 2x request to 4x rather than returning corrupted tiles |
 | `--idle_unload_seconds` | 900 | frees GPU VRAM after this many idle seconds; reloads in well under a second on the next request |
@@ -477,10 +476,11 @@ other settings do.
   'getImageData'..."`; Firefox's is `"The operation is insecure."` They
   never match, so message-string checks (the original upstream code did
   this, and it got copied into this guide's canvas-support path too before
-  being caught) silently skip the `imgURL` server-side-fetch fallback on
+  being caught) silently skip the in-extension image-byte fetch fallback on
   Firefox specifically, on every image sourced from a different origin than
   the page itself (a very common setup: CDN-hosted manga pages). Fixed in
-  `contentScript.js`'s two `catch(eIsColor)` blocks.
+  `contentScript.js`'s two `catch(eIsColor)` blocks; the backend no longer
+  accepts `imgURL` server-side fetches (SSRF).
 - **A new site's manifest permissions are added but "Reload" in
   `about:debugging` doesn't pick them up**: for a temporary add-on,
   permission changes in particular can survive a `Reload` in a stale state.

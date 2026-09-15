@@ -248,6 +248,39 @@ if (window.injectedMC !== 1) {
         });
     }
 
+    const blobToDataURL = (blob) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+        reader.readAsDataURL(blob);
+    });
+
+    // When the canvas is cross-origin tainted, we cannot read pixels locally.
+    // Fetch the image bytes in the extension (host permissions) and send
+    // imgData — never ask the backend to fetch arbitrary URLs (SSRF).
+    const fetchImgAsDataURL = async (index, img) => {
+        const src = img.currentSrc || img.src || img.dataset?.src || '';
+        if (!src || src.startsWith('data:')) {
+            if (src.startsWith('data:')) return src;
+            throw new Error('No image URL available for tainted-canvas fallback');
+        }
+        console.log(`[MC] [${index}] Canvas tainted — fetching image bytes in-extension: ${src.slice(0, 120)}`);
+        const resp = await fetch(src, { credentials: 'omit', mode: 'cors' }).catch(async () => {
+            // Some CDNs require no-cors opaque responses; try a no-cors
+            // fetch via a same-origin-ish second attempt is useless for bytes.
+            // Fall back to credentialed same-site fetch.
+            return fetch(src, { credentials: 'include' });
+        });
+        if (!resp || !resp.ok) {
+            throw new Error(`In-extension image fetch failed (${resp && resp.status})`);
+        }
+        const blob = await resp.blob();
+        if (!blob || blob.size < 8) {
+            throw new Error('In-extension image fetch returned empty body');
+        }
+        return blobToDataURL(blob);
+    };
+
     const setColoredOrFetch = (index, img, imgName, apiURL, force, imgContext, mangaProps) => {
         var canSendData = true;
         try {
@@ -268,13 +301,13 @@ if (window.injectedMC !== 1) {
             // .message text is NOT: Chrome says "Failed to execute
             // 'getImageData'...", Firefox says "The operation is insecure."
             // Matching on the Chrome-specific message (the original bug
-            // here) silently broke the imgURL fallback below on every
+            // here) silently broke the fallback below on every
             // Firefox user hitting a cross-origin, non-CORS image source.
             if (eIsColor.name !== 'SecurityError') {
                 console.log(`[MC] [${index}] Colorized context error: ${eIsColor}`);
                 return 0;
             }
-            console.log(`[MC] [${index}] Canvas tainted (cross-origin image, no CORS) -- sending imgURL for server-side fetch instead: ${imgName}`);
+            console.log(`[MC] [${index}] Canvas tainted (cross-origin image, no CORS) -- will fetch bytes in-extension: ${imgName}`);
         }
 
         const isAnimated = img.src.includes('animation')
@@ -283,7 +316,6 @@ if (window.injectedMC !== 1) {
             img.dataset.isProcessed = true;
             const postData = {
                 imgName: imgName,
-                imgURL: img.src,
                 imgWidth: img.width,
 				imgHeight: img.height,
 				cache: cache && !isAnimated,
@@ -298,20 +330,28 @@ if (window.injectedMC !== 1) {
 				adjustments: adjustments,
             }
 
-            console.log(`[MC] [${index}] Sending: `, postData);
-
-            if (canSendData)
-                postData.imgData = imgContext.canvas.toDataURL("image/png");
-
-            const options = {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(postData)
+            const send = (imgDataUrl) => {
+                postData.imgData = imgDataUrl;
+                console.log(`[MC] [${index}] Sending: `, { ...postData, imgData: `[data-url ${imgDataUrl.length} chars]` });
+                const options = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(postData)
+                };
+                return fetchColorizedImg(index, new URL('colorize-image-data', apiURL).toString(), options, img, imgName);
             };
 
-            fetchColorizedImg(index, new URL('colorize-image-data', apiURL).toString(), options, img, imgName)
+            const pipeline = canSendData
+                ? Promise.resolve(send(imgContext.canvas.toDataURL("image/png")))
+                : fetchImgAsDataURL(index, img).then(send);
+
+            pipeline
+                .catch((err) => {
+                    console.log(`[MC] [${index}] Colorize send failed: ${err}`);
+                    img.removeAttribute('data-is-processed');
+                })
                 .finally(() => {
                     activeFetches -= 1;
                     if(!force) colorizeMangaEventHandler();

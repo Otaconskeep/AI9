@@ -16,9 +16,10 @@ Set-Location $backendDir
 while ($true) {
     $stamp = Get-Date -Format 'yyyyMMdd'
     $logFile = Join-Path $logDir "server-$stamp.log"
-    "[$(Get-Date -Format o)] Starting app-stream.py" | Out-File -Append -Encoding utf8 $logFile
+    "[$(Get-Date -Format o)] Starting app-stream.py (localhost-only)" | Out-File -Append -Encoding utf8 $logFile
 
-    & $venvPython -u app-stream.py --idle_unload_seconds 900 *>> $logFile
+    # Explicit localhost bind — do not rely solely on the Python argparse default.
+    & $venvPython -u app-stream.py --host 127.0.0.1 --idle_unload_seconds 900 *>> $logFile
 
     $exitCode = $LASTEXITCODE
     "[$(Get-Date -Format o)] app-stream.py exited with code $exitCode, restarting in 5s" | Out-File -Append -Encoding utf8 $logFile
