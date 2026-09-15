@@ -21,6 +21,34 @@ def _ssl_dir(explicit: Path | None = None) -> Path:
     return Path(__file__).resolve().parent / "ssl"
 
 
+# Known-compromised material formerly committed to the public AI9 repo.
+# Any install still using this cert/key must rotate on upgrade.
+LEAKED_CERT_SHA1 = {
+    "8d0ad51da77f75f28cc6e77aa9ad82ee66d21d39",
+}
+
+
+def _cert_sha1_hex(crt: Path) -> str:
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+
+        cert = x509.load_pem_x509_certificate(crt.read_bytes())
+        return cert.fingerprint(hashes.SHA1()).hex()
+    except Exception:
+        # Fallback: openssl
+        try:
+            out = subprocess.check_output(
+                ["openssl", "x509", "-in", str(crt), "-noout", "-fingerprint", "-sha1"],
+                text=True,
+            )
+            # SHA1 Fingerprint=AA:BB:...
+            part = out.strip().split("=", 1)[-1]
+            return part.replace(":", "").lower()
+        except Exception:
+            return ""
+
+
 def has_usable_pair(ssl_dir: Path) -> bool:
     crt = ssl_dir / "server.crt"
     key = ssl_dir / "server.key"
@@ -28,12 +56,14 @@ def has_usable_pair(ssl_dir: Path) -> bool:
         return False
     if crt.stat().st_size < 100 or key.stat().st_size < 100:
         return False
-    # Reject empty / placeholder files
     key_head = key.read_bytes()[:32]
     if b"BEGIN" not in key_head and b"PRIVATE" not in key_head:
-        # Still accept binary/DER-ish keys if non-trivial size; OpenSSL PEM is normal.
         if len(key_head) < 16:
             return False
+    # Force rotate if this is the historically committed shared cert.
+    fp = _cert_sha1_hex(crt)
+    if fp and fp.lower() in LEAKED_CERT_SHA1:
+        return False
     return True
 
 
@@ -129,6 +159,14 @@ def generate_self_signed(ssl_dir: Path) -> None:
 def ensure_ssl(ssl_dir: Path | None = None) -> tuple[Path, Path]:
     directory = _ssl_dir(ssl_dir)
     if not has_usable_pair(directory):
+        # Remove leaked / broken materials before minting a fresh unique pair.
+        for name in ("server.crt", "server.key", "server.csr"):
+            path = directory / name
+            try:
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
         generate_self_signed(directory)
     if not has_usable_pair(directory):
         raise RuntimeError(f"Failed to create TLS materials under {directory}")
