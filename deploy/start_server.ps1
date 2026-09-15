@@ -5,7 +5,7 @@
 # reboots without any manual step.
 
 $ErrorActionPreference = 'Continue'
-$root = 'C:\opt\manga-colorizer'
+$root = Split-Path -Parent $PSScriptRoot
 $venvPython = Join-Path $root 'venv\Scripts\python.exe'
 $backendDir = Join-Path $root 'backend'
 $logDir = Join-Path $root 'logs'
