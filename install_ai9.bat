@@ -1,10 +1,12 @@
-@echo off
+﻿@echo off
 REM AI9 one-click installer launcher (Antonio G. Garcia // Otaconskeep)
 REM Double-click this file. It finds/installs Git Bash, then runs install_ai9.sh.
 setlocal enabledelayedexpansion
 title AI9 Installer
 
 set "SCRIPT_DIR=%~dp0"
+REM Strip trailing backslash so cygpath -u '...' is not broken by \'
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "BASH_EXE="
 
 if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles%\Git\bin\bash.exe"
