@@ -42,13 +42,25 @@ This is a real capture of AI9 taking a black-and-white manga page through the lo
 driver already installed. That's it, everything else gets installed for
 you.**
 
-1. Download this repo (green **Code** button → **Download ZIP**, then
-   extract it anywhere) or `git clone` it.
+### Easiest path (recommended)
+
+1. Open [otaconskeep.com/ai9](https://otaconskeep.com/ai9/#install).
+2. Click **Download AI9 Setup**.
+3. Open your Downloads folder and **double-click `AI9-Setup.bat`**.
+   Do **not** type the filename into Command Prompt — that only works if
+   you already `cd`'d into the folder that contains the file.
+
+The Setup file is a lone Downloads launcher: it fetches `install_ai9.sh`
+if needed, installs Git Bash when missing, then runs the real installer.
+
+### From this repo (ZIP / clone)
+
+1. Download this repo (green **Code** → **Download ZIP**, extract) or
+   `git clone` it.
 2. Open the extracted `AI9` folder.
 3. **Double-click `install_ai9.bat`.**
 
-That's the whole install. A black window opens and does everything
-automatically:
+Either way, a black window opens and does everything automatically:
 
 - installs Git and Python 3.12 if they're not already on your PC (via
   `winget`, no manual downloads),
