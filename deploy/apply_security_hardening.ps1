@@ -20,13 +20,16 @@ $files = @(
     'deploy/start_server.ps1',
     'extension/manifest.json',
     'extension/contentScript.js',
+    'extension/background.js',
+    'extension/popup.js',
     'extension/siteConfig.json'
 )
 foreach ($rel in $files) {
     $dest = Join-Path $root ($rel -replace '/', '\')
-    $url = "$raw/$rel"
+    $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $url = "$raw/$rel" + "?cb=$cb"
     Write-Host "Fetching $rel"
-    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers @{ 'Cache-Control' = 'no-cache'; 'Pragma' = 'no-cache' }
 }
 
 # Fix portable $root in start_server.ps1 if still hardcoded
