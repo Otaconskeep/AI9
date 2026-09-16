@@ -204,16 +204,24 @@ if (window.injectedMC !== 1) {
 
 
     // ---- API functions and helpers ----
-    async function fetchColorizedImg(index, url, options, img, imgName) {
+    // Page-context fetch() to https://127.0.0.1:5000 is CORS-blocked on every
+    // manga site. Route GPU API calls through the background script instead.
+    async function callColorizeAPI(apiURL, postData) {
+        const result = await browser.runtime.sendMessage({
+            action: 'colorizeImageData',
+            apiURL,
+            postData,
+        });
+        if (!result || !result.ok) {
+            throw new Error(result && result.error ? result.error : 'colorize API failed');
+        }
+        return result.json;
+    }
+
+    async function fetchColorizedImg(index, apiURL, postData, img, imgName) {
     console.log(`[MC] [${index}] Fetching: ${imgName}`);
     const savedSrc = img.src
-    return fetch(url, options)
-        .then(response => {
-            if (!response.ok)
-                return response.text().then(text => { throw text })
-            else
-                return response.json()
-        })
+    return callColorizeAPI(apiURL, postData)
         .then(json => {
             if (json.msg)
                 console.log(`[MC] [${index}] Message: ${json.msg}`);
@@ -335,14 +343,7 @@ if (window.injectedMC !== 1) {
             const send = (imgDataUrl) => {
                 postData.imgData = imgDataUrl;
                 console.log(`[MC] [${index}] Sending: `, { ...postData, imgData: `[data-url ${imgDataUrl.length} chars]` });
-                const options = {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(postData)
-                };
-                return fetchColorizedImg(index, new URL('colorize-image-data', apiURL).toString(), options, img, imgName);
+                return fetchColorizedImg(index, apiURL, postData, img, imgName);
             };
 
             const pipeline = canSendData
@@ -392,15 +393,9 @@ if (window.injectedMC !== 1) {
     const canvasOriginalSnapshots = new WeakMap();
     let canvasNameCounter = 0;
 
-    async function fetchColorizedCanvas(index, url, options, canvas, canvasName) {
+    async function fetchColorizedCanvas(index, apiURL, postData, canvas, canvasName) {
         console.log(`[MC] [${index}] Fetching (canvas): ${canvasName}`);
-        return fetch(url, options)
-            .then(response => {
-                if (!response.ok)
-                    return response.text().then(text => { throw text })
-                else
-                    return response.json()
-            })
+        return callColorizeAPI(apiURL, postData)
             .then(json => {
                 if (json.msg)
                     console.log(`[MC] [${index}] Message: ${json.msg}`);
@@ -492,13 +487,7 @@ if (window.injectedMC !== 1) {
 
             console.log(`[MC] [${index}] Sending (canvas): `, postData);
 
-            const options = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(postData)
-            };
-
-            fetchColorizedCanvas(index, new URL('colorize-image-data', apiURL).toString(), options, canvas, canvasName)
+            fetchColorizedCanvas(index, apiURL, postData, canvas, canvasName)
                 .finally(() => {
                     activeFetches -= 1;
                     if(!force) colorizeMangaEventHandler();
@@ -842,9 +831,7 @@ if (window.injectedMC !== 1) {
             adjustments: adjustments,
             imgData: imgContext.canvas.toDataURL("image/png"),
         };
-        const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(postData) };
-        return fetch(new URL('colorize-image-data', apiURL).toString(), options)
-            .then(response => response.ok ? response.json() : response.text().then(t => { throw t }))
+        return callColorizeAPI(apiURL, postData)
             .then(json => {
                 if (json.colorImgData) {
                     liveImg.src = json.colorImgData;
@@ -873,9 +860,7 @@ if (window.injectedMC !== 1) {
             mangaChapter: mangaProps.chapter,
             adjustments: adjustments,
         };
-        const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(postData) };
-        return fetch(new URL('colorize-image-data', apiURL).toString(), options)
-            .then(response => response.ok ? response.json() : response.text().then(t => { throw t }))
+        return callColorizeAPI(apiURL, postData)
             .then(json => {
                 if (json.colorImgData) {
                     const resultImg = new Image();
