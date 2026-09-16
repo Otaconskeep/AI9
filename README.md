@@ -2,6 +2,10 @@
 
 **Designed by Antonio Garcia.**
 
+[![AI9 Manga Colorizer](https://img.youtube.com/vi/aUiwMACSPBk/maxresdefault.jpg)](https://youtu.be/aUiwMACSPBk)
+
+**[Watch the AI9 video on YouTube](https://youtu.be/aUiwMACSPBk)**
+
 Automatically colorizes black-and-white manga pages as you read them in Firefox,
 using a **local GPU** (no cloud API, no per-page clicking, no upload step).
 Built on top of [gilgamesh117/Manga-Colorizer](https://github.com/gilgamesh117/Manga-Colorizer)
@@ -30,7 +34,9 @@ the patches are Crunchyroll-specific. This works for any `<img>` or
 
 Real local inference running through AI9. Black-and-white manga in, colorized page out.
 
-This is a real capture of AI9 taking a black-and-white manga page through the local colorization workflow and producing the finished colored result.
+**[Watch the walkthrough on YouTube](https://youtu.be/aUiwMACSPBk)** — also embedded on the [AI9 install page](https://otaconskeep.com/ai9/).
+
+This GIF is a real capture of AI9 taking a black-and-white manga page through the local colorization workflow and producing the finished colored result.
 
 ![AI9 Manga Colorizer Demo](docs/assets/ai9-manga-colorizer-demo.gif)
 
