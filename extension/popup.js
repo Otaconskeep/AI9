@@ -18,10 +18,16 @@ const runButton = document.getElementById("run");
 const testApiButton = document.getElementById("test-api");
 const forceRunButton = document.getElementById("force-run");
 
+const DEFAULT_API_URL = "https://127.0.0.1:5000/";
+
 browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showColorized", "cache", "denoise",
                 "colorize", "upscale", "denoiseSigma", "upscaleFactor",
                 "colorTolerance", "colorStride", "websites"], (result) => {
-    urlInput.value = result.apiURL || "https://127.0.0.1:5000/";
+    const apiURL = result.apiURL || DEFAULT_API_URL;
+    urlInput.value = apiURL;
+    if (!result.apiURL) {
+        browser.storage.local.set({ apiURL });
+    }
     maxActiveFetches.value = result.maxActiveFetches || "1";
     showOriginalCheckbox.checked = result.showOriginal !== undefined ? result.showOriginal : false;
     showColorizedCheckbox.checked = result.showColorized !== undefined ? result.showColorized : true;
@@ -59,7 +65,7 @@ browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showCo
                     // click handler -- permissions.request() requires a user
                     // gesture) using the optional_host_permissions ceiling
                     // declared in the manifest.
-                    browser.permissions.request({ origins: [`*://${hostname}/*`, '*://*/*'] }).then((granted) => {
+                    browser.permissions.request({ origins: [`*://${hostname}/*`] }).then((granted) => {
                         if (!granted) {
                             addSiteButton.innerText = "Permission denied - click to retry";
                             return;
@@ -109,12 +115,8 @@ runButton.addEventListener("click",() => {
         }
     });
 
-    // Manga CDNs are often on a different host than the reader page. Optional
-    // *://*/* lets the background script fetch those image bytes (content-
-    // script fetch is page-CORS-bound and fails without Access-Control-*).
-    browser.permissions.request({ origins: ['*://*/*'] }).catch(() => false).then(() => {
     browser.storage.local.set({
-        apiURL: urlInput.value.trim(),
+        apiURL: urlInput.value.trim() || DEFAULT_API_URL,
         maxActiveFetches: maxActiveFetches.value.trim(),
         showOriginal: showOriginalCheckbox.checked,
         showColorized: showColorizedCheckbox.checked,
@@ -131,10 +133,11 @@ runButton.addEventListener("click",() => {
     }); 
     
     browser.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        browser.tabs.sendMessage(tabs[0].id, {
-            action: 'runColorizer',
-        });
-    });
+        if (tabs[0]?.id) {
+            browser.tabs.sendMessage(tabs[0].id, {
+                action: 'runColorizer',
+            });
+        }
     });
 })
 

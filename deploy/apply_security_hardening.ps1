@@ -66,4 +66,11 @@ Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue |
 Write-Host "Local health:"
 curl.exe -sk https://127.0.0.1:5000/healthz
 Write-Host ""
-Write-Host "Done. From another PC, curl to this machine's LAN IP:5000 must fail."
+Write-Host ""
+Write-Host "Extension updated. In Firefox:"
+Write-Host "  1. about:debugging#/runtime/this-firefox"
+Write-Host "  2. Remove old AI9, then Load Temporary Add-on -> $root\extension\manifest.json"
+Write-Host "  3. Open popup -> Test -> accept certificate once"
+Write-Host "  4. Refresh your manga tab and click Colorize!"
+$manifest = Get-Content (Join-Path $root 'extension\manifest.json') -Raw | ConvertFrom-Json
+Write-Host "Installed extension version: $($manifest.version)"

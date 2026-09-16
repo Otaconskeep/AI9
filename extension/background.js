@@ -98,7 +98,11 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             }
             sendResponse({ ok: true, json: await resp.json() });
         })().catch((err) => {
-            sendResponse({ ok: false, error: String(err && err.message ? err.message : err) });
+            const msg = String(err && err.message ? err.message : err);
+            const hint = /network|fetch|failed/i.test(msg)
+                ? 'Open the AI9 popup, click Test, and accept the self-signed certificate for https://127.0.0.1:5000/ once.'
+                : undefined;
+            sendResponse({ ok: false, error: msg, hint });
         });
         return true;
     }

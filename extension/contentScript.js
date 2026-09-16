@@ -8,7 +8,7 @@ if (window.injectedMC !== 1) {
     var isSelecting = false;
 
     // Configuration variables
-    var apiURL = ''
+    var apiURL = 'https://127.0.0.1:5000/'
     var maxActiveFetches = 1;  // Number of images to request and process parallely
     var colorTolerance = 30;  // MSE Cutoff check for an already-colored image
     var colorStride = 4;  // Skip every this many rows and columns pixels for MSE calculation
@@ -213,7 +213,9 @@ if (window.injectedMC !== 1) {
             postData,
         });
         if (!result || !result.ok) {
-            throw new Error(result && result.error ? result.error : 'colorize API failed');
+            const msg = result && result.error ? result.error : 'colorize API failed';
+            const hint = result && result.hint ? ` ${result.hint}` : '';
+            throw new Error(msg + hint);
         }
         return result.json;
     }
@@ -671,8 +673,15 @@ if (window.injectedMC !== 1) {
         try {
             browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showColorized", "cache", "denoise", "colorize", "upscale", "denoiseSigma", "upscaleFactor",
                 "colorTolerance", "colorStride", "minImgHeight", "minImgHeight", "adjustments"], (result) => {
-                apiURL = result.apiURL;
-                if (apiURL && siteConfigurations) {
+                apiURL = result.apiURL || 'https://127.0.0.1:5000/';
+                if (!result.apiURL) {
+                    browser.storage.local.set({ apiURL });
+                }
+                if (!siteConfigurations) {
+                    console.log('[MC] siteConfig.json not loaded yet; waiting for next scan');
+                    return;
+                }
+                if (apiURL) {
                     maxActiveFetches = Number(result.maxActiveFetches || "1")
                     showOriginal = result.showOriginal
                     showColorized = result.showColorized
