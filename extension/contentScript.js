@@ -280,6 +280,7 @@ if (window.injectedMC !== 1) {
         const result = await browser.runtime.sendMessage({
             action: 'fetchImageAsDataURL',
             url: src,
+            referrer: window.location.href,
         });
         if (!result || !result.ok || !result.dataUrl) {
             if (result && result.error === 'missing_host_permission') {
@@ -288,7 +289,8 @@ if (window.injectedMC !== 1) {
                     `Open the AI9 popup and click Colorize! once, then allow access when Firefox asks.`
                 );
             }
-            throw new Error(`Background image fetch failed: ${(result && result.error) || 'unknown'}`);
+            const hint = result && result.hint ? ` ${result.hint}` : '';
+            throw new Error(`Background image fetch failed: ${(result && result.error) || 'unknown'}${hint}`);
         }
         return result.dataUrl;
     };

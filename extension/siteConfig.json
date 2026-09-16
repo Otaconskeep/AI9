@@ -9,7 +9,7 @@
         "titleQuery": "document.querySelector('h1#top')?.innerText",
         "chapterQuery": "document.querySelector('h1#top')?.innerText",
         "useAltTextAsImageName": false,
-        "_note": "Verified live against a real chapter page: pages are <img class=\"js-page\" data-src=\"...\">. Images are served from a different CDN (e.g. cdn.readdetectiveconan.com) without CORS. Content-script fetch cannot read those bytes; AI9's background script fetches them with host permissions and sends imgData to the local API."
+        "_note": "Pages are <img class=\"js-page\" data-src=\"...\">. Images come from a hotlink-protected CDN (e.g. cdn.readdetectiveconan.com) that returns 403 without a mangapill.com Referer and omits CORS. Background script fetches with Referer set to the reader page and sends imgData to the local API."
     },
     "mangadex.org": {
         "titleQuery": "document.querySelector('a[data-v-5d3b2210]')?.innerText",

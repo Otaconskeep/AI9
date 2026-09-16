@@ -58,9 +58,38 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 });
                 return;
             }
-            const resp = await fetch(url, { credentials: 'omit', redirect: 'follow' });
+            // Manga CDNs (mangapill → cdn.readdetectiveconan.com) hotlink-protect
+            // and return 403 unless Referer is the reader site. Content-script
+            // fetch can't get bytes (CORS); background can, but must spoof Referer.
+            const headers = {};
+            let referer = String(msg.referrer || msg.referer || '').trim();
+            if (referer) {
+                try {
+                    const refUrl = new URL(referer);
+                    if (refUrl.protocol === 'http:' || refUrl.protocol === 'https:') {
+                        // Prefer origin+/ so chapter paths and bare hostname both work.
+                        referer = refUrl.origin + '/';
+                        headers['Referer'] = referer;
+                        headers['Origin'] = refUrl.origin;
+                    }
+                } catch {
+                    /* ignore bad referrer */
+                }
+            }
+            const resp = await fetch(url, {
+                credentials: 'omit',
+                redirect: 'follow',
+                referrer: referer || undefined,
+                headers,
+            });
             if (!resp.ok) {
-                sendResponse({ ok: false, error: `http_${resp.status}` });
+                sendResponse({
+                    ok: false,
+                    error: `http_${resp.status}`,
+                    hint: resp.status === 403
+                        ? 'CDN rejected the image fetch (hotlink protection). Reload extension v0.6.5+ and retry.'
+                        : undefined,
+                });
                 return;
             }
             const buf = await resp.arrayBuffer();
@@ -69,6 +98,10 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 return;
             }
             const mime = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0].trim() || 'image/jpeg';
+            if (!mime.startsWith('image/')) {
+                sendResponse({ ok: false, error: `not_an_image (${mime})` });
+                return;
+            }
             sendResponse({
                 ok: true,
                 dataUrl: `data:${mime};base64,${arrayBufferToBase64(buf)}`,
