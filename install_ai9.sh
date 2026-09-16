@@ -307,8 +307,17 @@ sync_repo() {
   if [[ -d "$dest/.git" ]]; then
     log "Updating $label"
     "$GIT" -C "$dest" fetch --quiet origin
-    "$GIT" -C "$dest" checkout --quiet main 2>/dev/null || true
-    "$GIT" -C "$dest" pull --ff-only
+    # .sources/* is an installer cache, not user data. A prior run or local
+    # edit can leave the checkout diverged from origin/main; reset so reruns
+    # never die on "Not possible to fast-forward".
+    if ! "$GIT" -C "$dest" checkout --quiet -B main origin/main 2>/dev/null; then
+      "$GIT" -C "$dest" checkout --quiet main 2>/dev/null || \
+        "$GIT" -C "$dest" checkout --quiet -b main origin/main
+    fi
+    if ! "$GIT" -C "$dest" merge --ff-only origin/main 2>/dev/null; then
+      warn "$label diverged from origin/main; resetting installer cache to published source."
+      "$GIT" -C "$dest" reset --hard origin/main
+    fi
   elif [[ -e "$dest" ]]; then
     die "$dest exists but is not a Git checkout. Move/remove it and rerun."
   else
