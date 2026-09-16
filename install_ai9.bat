@@ -65,7 +65,7 @@ if exist "%SCRIPT_DIR%\.git\HEAD" if exist "%SCRIPT_DIR%\install_ai9.sh" (
 if not exist "%INST%" mkdir "%INST%" >nul 2>&1
 set "WORK=%INST%"
 echo  [1/3] Downloading install_ai9.sh ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; $url='%RAW%/install_ai9.sh'; $out=Join-Path $env:LOCALAPPDATA 'AI9\installer\install_ai9.sh'; New-Item -ItemType Directory -Force -Path (Split-Path $out) | Out-Null; Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing; if (-not (Test-Path -LiteralPath $out)) { exit 1 }; if ((Get-Item -LiteralPath $out).Length -lt 100) { exit 2 }; exit 0 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference='Stop'; $cb=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); $url=('%RAW%/install_ai9.sh' + '?cb=' + $cb); $out=Join-Path $env:LOCALAPPDATA 'AI9\installer\install_ai9.sh'; New-Item -ItemType Directory -Force -Path (Split-Path $out) | Out-Null; Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -Headers @{ 'Cache-Control'='no-cache'; 'Pragma'='no-cache' }; if (-not (Test-Path -LiteralPath $out)) { exit 1 }; if ((Get-Item -LiteralPath $out).Length -lt 100) { exit 2 }; exit 0 }"
 if errorlevel 1 (
     echo.
     echo  DOWNLOAD FAILED
