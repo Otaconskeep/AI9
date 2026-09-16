@@ -256,29 +256,31 @@ if (window.injectedMC !== 1) {
     });
 
     // When the canvas is cross-origin tainted, we cannot read pixels locally.
-    // Fetch the image bytes in the extension (host permissions) and send
-    // imgData — never ask the backend to fetch arbitrary URLs (SSRF).
+    // Fetch image bytes via the background script (host permissions bypass
+    // page CORS) and send imgData — never ask the backend to fetch URLs (SSRF).
+    // A content-script fetch() here is still page-CORS-bound and fails on CDNs
+    // like cdn.readdetectiveconan.com that omit Access-Control-Allow-Origin.
     const fetchImgAsDataURL = async (index, img) => {
         const src = img.currentSrc || img.src || img.dataset?.src || '';
         if (!src || src.startsWith('data:')) {
             if (src.startsWith('data:')) return src;
             throw new Error('No image URL available for tainted-canvas fallback');
         }
-        console.log(`[MC] [${index}] Canvas tainted — fetching image bytes in-extension: ${src.slice(0, 120)}`);
-        const resp = await fetch(src, { credentials: 'omit', mode: 'cors' }).catch(async () => {
-            // Some CDNs require no-cors opaque responses; try a no-cors
-            // fetch via a same-origin-ish second attempt is useless for bytes.
-            // Fall back to credentialed same-site fetch.
-            return fetch(src, { credentials: 'include' });
+        console.log(`[MC] [${index}] Canvas tainted — fetching image bytes via background: ${src.slice(0, 120)}`);
+        const result = await browser.runtime.sendMessage({
+            action: 'fetchImageAsDataURL',
+            url: src,
         });
-        if (!resp || !resp.ok) {
-            throw new Error(`In-extension image fetch failed (${resp && resp.status})`);
+        if (!result || !result.ok || !result.dataUrl) {
+            if (result && result.error === 'missing_host_permission') {
+                throw new Error(
+                    `Missing host permission for ${result.origin}. ` +
+                    `Open the AI9 popup and click Colorize! once, then allow access when Firefox asks.`
+                );
+            }
+            throw new Error(`Background image fetch failed: ${(result && result.error) || 'unknown'}`);
         }
-        const blob = await resp.blob();
-        if (!blob || blob.size < 8) {
-            throw new Error('In-extension image fetch returned empty body');
-        }
-        return blobToDataURL(blob);
+        return result.dataUrl;
     };
 
     const setColoredOrFetch = (index, img, imgName, apiURL, force, imgContext, mangaProps) => {
