@@ -97,17 +97,30 @@ if not defined BASH_EXE if exist "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" set 
 REM Do NOT use bare "where bash" - that often hits the WSL stub, which AI9 refuses.
 if not defined BASH_EXE (
     echo  Git Bash not found. Installing Git for Windows via winget...
-    where winget.exe >nul 2>nul
-    if errorlevel 1 (
+    set "WINGET_EXE="
+    where winget.exe >nul 2>nul && for /f "delims=" %%W in ('where winget.exe 2^>nul') do if not defined WINGET_EXE set "WINGET_EXE=%%W"
+    REM WindowsApps App Execution Alias is often a 0-byte stub or directory.
+    if defined WINGET_EXE (
+        if exist "!WINGET_EXE!\*" set "WINGET_EXE="
+    )
+    if defined WINGET_EXE (
+        for %%A in ("!WINGET_EXE!") do if %%~zA LSS 1024 set "WINGET_EXE="
+    )
+    if defined WINGET_EXE (
+        "!WINGET_EXE!" --version >nul 2>nul
+        if errorlevel 1 set "WINGET_EXE="
+    )
+    if not defined WINGET_EXE (
         echo.
-        echo  winget is not available on this PC.
+        echo  winget is not available on this PC ^(or only a broken App Alias was found^).
         echo  Install Git for Windows from https://git-scm.com/download/win
         echo  then double-click this same Setup file again.
+        echo  Or install "App Installer" from the Microsoft Store so winget works.
         echo.
         pause
         exit /b 1
     )
-    winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+    "!WINGET_EXE!" install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
     if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles%\Git\bin\bash.exe"
     if not defined BASH_EXE if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH_EXE=%ProgramFiles(x86)%\Git\bin\bash.exe"
     if not defined BASH_EXE if exist "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" set "BASH_EXE=%LOCALAPPDATA%\Programs\Git\bin\bash.exe"

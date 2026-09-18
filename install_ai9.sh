@@ -104,12 +104,31 @@ version_ge() {
 }
 
 find_winget() {
-  if command_exists winget.exe; then
-    printf '%s\n' "winget.exe"
-    return 0
+  # WindowsApps "winget.exe" is often a 0-byte App Execution Alias (or even a
+  # directory). Existence / -x is not enough — the binary must actually run.
+  local candidate=""
+  local -a candidates=()
+  local c
+  c="$(command -v winget.exe 2>/dev/null || true)"
+  [[ -n "$c" ]] && candidates+=("$c")
+  c="$(command -v winget 2>/dev/null || true)"
+  [[ -n "$c" ]] && candidates+=("$c")
+  candidates+=("/c/Users/${USERNAME:-}/AppData/Local/Microsoft/WindowsApps/winget.exe")
+  # Real DesktopAppInstaller package binary (when present).
+  if compgen -G "/c/Program Files/WindowsApps/Microsoft.DesktopAppInstaller_*/winget.exe" >/dev/null 2>&1; then
+    while IFS= read -r c; do
+      [[ -n "$c" ]] && candidates+=("$c")
+    done < <(compgen -G "/c/Program Files/WindowsApps/Microsoft.DesktopAppInstaller_*/winget.exe" 2>/dev/null || true)
   fi
-  local candidate="/c/Users/${USERNAME:-}/AppData/Local/Microsoft/WindowsApps/winget.exe"
-  [[ -x "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  for candidate in "${candidates[@]}"; do
+    [[ -f "$candidate" ]] || continue
+    # Reject empty App Execution Alias stubs.
+    [[ -s "$candidate" ]] || continue
+    if "$candidate" --version >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
   return 1
 }
 
@@ -253,9 +272,20 @@ case "$GPU_NAME" in
     MIN_DRIVER_CUDA="12.8"
     GPU_FAMILY="RTX 50-series / Blackwell"
     ;;
-  *"RTX 40"*)
-    GPU_FAMILY="RTX 40-series / Ada"
-    if version_ge "$CUDA_MAX" "12.6"; then
+  *"RTX 40"*|*"RTX 30"*)
+    if [[ "$GPU_NAME" == *"RTX 40"* ]]; then
+      GPU_FAMILY="RTX 40-series / Ada"
+    else
+      GPU_FAMILY="RTX 30-series / Ampere"
+    fi
+    # Prefer modern CUDA wheels when the driver allows it. Forcing Ampere onto
+    # cu118 left friends on stale builds while cu128 wheels work on RTX 3070
+    # once the NVIDIA driver actually exposes CUDA compute.
+    if version_ge "$CUDA_MAX" "12.8"; then
+      TORCH_FLAVOR="cu128"
+      TORCH_CUDA="12.8"
+      MIN_DRIVER_CUDA="12.8"
+    elif version_ge "$CUDA_MAX" "12.6"; then
       TORCH_FLAVOR="cu126"
       TORCH_CUDA="12.6"
       MIN_DRIVER_CUDA="12.6"
@@ -263,15 +293,13 @@ case "$GPU_NAME" in
       TORCH_FLAVOR="cu121"
       TORCH_CUDA="12.1"
       MIN_DRIVER_CUDA="12.1"
+    elif version_ge "$CUDA_MAX" "11.8"; then
+      TORCH_FLAVOR="cu118"
+      TORCH_CUDA="11.8"
+      MIN_DRIVER_CUDA="11.8"
     else
-      die "Found your $GPU_NAME, but its NVIDIA driver is out of date (reports CUDA $CUDA_MAX, needs 12.1+). What to do: go to https://www.nvidia.com/download/index.aspx, download and install the latest driver for your GPU, restart your PC, then double-click install_ai9.bat again."
+      die "Found your $GPU_NAME, but its NVIDIA driver is out of date (reports CUDA $CUDA_MAX, needs 11.8+). What to do: go to https://www.nvidia.com/download/index.aspx, download and install the latest Game Ready or Studio driver for your GPU, restart your PC, then double-click install_ai9.bat again."
     fi
-    ;;
-  *"RTX 30"*)
-    TORCH_FLAVOR="cu118"
-    TORCH_CUDA="11.8"
-    MIN_DRIVER_CUDA="11.8"
-    GPU_FAMILY="RTX 30-series / Ampere"
     ;;
   *)
     die "Your GPU ('$GPU_NAME') isn't one this installer auto-configures yet -- it currently supports NVIDIA RTX 30, 40, and 50-series cards. If you have one of those and this is a false detection, or you have a different NVIDIA card and know what you're doing, see the 'Manual setup' section in README.md to install PyTorch by hand."
@@ -358,11 +386,32 @@ if old in text:
 PY
 
 log "Preparing the AI9 Python environment"
-if [[ ! -x "$VENV_PY" ]]; then
+venv_is_healthy() {
+  local py="$1"
+  [[ -f "$py" && -x "$py" ]] || return 1
+  # Must actually run (broken/partial venvs leave a Scripts/python.exe stub).
+  "$py" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1 || return 1
+  # Prefer matching the host interpreter major.minor so we never keep a
+  # stale 3.10/3.11 venv after Python 3.12 was restored.
+  local host_mm venv_mm
+  host_mm="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+  venv_mm="$("$py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+  [[ -n "$host_mm" && -n "$venv_mm" && "$host_mm" == "$venv_mm" ]] || return 1
+  "$py" -m pip --version >/dev/null 2>&1 || return 1
+  return 0
+}
+
+FORCE_VENV="${AI9_FORCE_VENV:-0}"
+if [[ "$FORCE_VENV" == "1" ]] || ! venv_is_healthy "$VENV_PY"; then
+  if [[ -e "$VENV_DIR" ]]; then
+    warn "Existing venv is missing, broken, or on the wrong Python — recreating: $VENV_DIR"
+    rm -rf "$VENV_DIR"
+  fi
   "$PYTHON" -m venv "$(winpath "$VENV_DIR")"
 fi
 [[ -x "$VENV_PY" ]] || die "venv creation failed."
-ok "venv: $VENV_DIR"
+venv_is_healthy "$VENV_PY" || die "venv at $VENV_DIR still looks unhealthy after recreate. What to do: delete that folder and rerun AI9 Setup, or set AI9_FORCE_VENV=1."
+ok "venv: $VENV_DIR ($("$VENV_PY" --version 2>&1))"
 
 "$VENV_PY" -m pip install --upgrade "pip" "setuptools>=70,<82" "wheel"
 
@@ -403,13 +452,24 @@ fi
 ok "setuptools pinned to Torch-compatible range (<82)"
 
 log "Antonio G. Garcia GPU trial: verifying CUDA kernels and cuDNN"
-if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")"; then
+GPU_PROBE_LOG="$(mktemp /tmp/ai9-gpu-probe.XXXXXX.log 2>/dev/null || echo /tmp/ai9-gpu-probe.log)"
+if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")" 2>&1 | tee "$GPU_PROBE_LOG"; then
   warn "GPU probe failed once. Reinstalling the selected PyTorch build cleanly and retrying."
   "$VENV_PY" -m pip uninstall -y torch torchvision torchaudio || true
   "$VENV_PY" -m pip install --no-cache-dir torch torchvision \
     --index-url "https://download.pytorch.org/whl/$TORCH_FLAVOR"
-  "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")" || \
-    die "GPU validation still failed. The likely cause is an NVIDIA driver/PyTorch architecture mismatch."
+  if ! "$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")" 2>&1 | tee "$GPU_PROBE_LOG"; then
+    DIAG="$("$VENV_PY" "$(winpath "$INSTALL_DIR/backend/gpu_check.py")" --diagnose 2>/dev/null || true)"
+    if grep -qiE 'cuInit.*(100|999)|no CUDA (compute )?device|CUDA error: no (CUDA-)?capable' "$GPU_PROBE_LOG" 2>/dev/null \
+      || echo "$DIAG" | grep -qi 'driver_compute'; then
+      die "GPU validation failed because NVIDIA CUDA compute is not visible to Python (often cuInit error 100), even if nvidia-smi can list the GPU. This is a driver / CUDA compute problem — not a PyTorch wheel architecture mismatch. What to do: 1) Install a clean Game Ready or Studio driver from https://www.nvidia.com/download/index.aspx 2) Reboot 3) Confirm nvidia-smi works 4) Double-click AI9 Setup again. Optional: delete the AI9 venv folder first so Torch is reinstalled cleanly."
+    fi
+    if grep -qiE 'no kernel image|sm_[0-9]+|compatibility|arch' "$GPU_PROBE_LOG" 2>/dev/null \
+      || echo "$DIAG" | grep -qi 'arch_mismatch'; then
+      die "GPU validation failed: this PyTorch build ($TORCH_FLAVOR) does not have working kernels for your GPU architecture. What to do: report your GPU model + nvidia-smi CUDA Version, or try AI9_FORCE_VENV=1 after updating the driver."
+    fi
+    die "GPU validation still failed after reinstalling PyTorch ($TORCH_FLAVOR). Check the probe log above. Common causes: (1) NVIDIA driver installed but CUDA compute not active until reboot, (2) broken driver install, (3) GPU not visible to this Windows session. nvidia-smi seeing the card is not enough — torch.cuda.is_available() must become True."
+  fi
 fi
 ok "GPU inference validation passed"
 
