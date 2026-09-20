@@ -1,10 +1,16 @@
 # AI9: Local GPU Manga Auto-Colorization for Firefox
 
-**Designed by Antonio Garcia.**
+**Designed by Antonio Garcia (Otaconskeep)**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-39e6c8.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Windows-NVIDIA%20GPU-0e5f52.svg)](https://otaconskeep.github.io/ai9/)
+[![Site](https://img.shields.io/badge/Site-otaconskeep.github.io-8db3d9.svg)](https://otaconskeep.github.io/ai9/)
+[![YouTube](https://img.shields.io/badge/Demo-YouTube-ff0000.svg)](https://youtu.be/aUiwMACSPBk)
+[![Discord](https://img.shields.io/badge/Discord-Otaconskeep-5865F2.svg)](https://discord.gg/cZDeqECzX)
 
 [![AI9 Manga Colorizer](https://img.youtube.com/vi/aUiwMACSPBk/maxresdefault.jpg)](https://youtu.be/aUiwMACSPBk)
 
-**[Watch the AI9 video on YouTube](https://youtu.be/aUiwMACSPBk)**
+**[Watch the AI9 video on YouTube](https://youtu.be/aUiwMACSPBk)** · **[Canonical site](https://otaconskeep.github.io/ai9/)**
 
 Automatically colorizes black-and-white manga pages as you read them in Firefox,
 using a **local GPU** (no cloud API, no per-page clicking, no upload step).
@@ -34,7 +40,7 @@ the patches are Crunchyroll-specific. This works for any `<img>` or
 
 Real local inference running through AI9. Black-and-white manga in, colorized page out.
 
-**[Watch the walkthrough on YouTube](https://youtu.be/aUiwMACSPBk)** — also embedded on the [AI9 install page](https://otaconskeep.com/ai9/).
+**[Watch the walkthrough on YouTube](https://youtu.be/aUiwMACSPBk)** — also embedded on the [AI9 install page](https://otaconskeep.github.io/ai9/).
 
 This GIF is a real capture of AI9 taking a black-and-white manga page through the local colorization workflow and producing the finished colored result.
 
