@@ -164,3 +164,20 @@ button:disabled {
   cursor: not-allowed;
   border: 1px solid lightgrey;
 }
+
+/* Visually hidden but still programmatically clickable (display:none breaks input.click()). */
+#local-image-input {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+#local-image-status {
+  max-width: 320px;
+  text-align: center;
+  word-break: break-word;
+  min-height: 1.2em;
+}

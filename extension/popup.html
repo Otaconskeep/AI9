@@ -152,8 +152,15 @@
       <button id="addsite" style="display: none;">Add</button>
     </div>
     <div class="settings-container">
+      <button id="select-local-image" type="button" title="Colorize a PNG/JPG from your computer (no manga site required)">Select an image</button>
+      <input id="local-image-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif,.png,.jpg,.jpeg,.webp,.bmp,.gif" />
+    </div>
+    <div class="settings-container">
+      <span id="local-image-status" class="setting-label" aria-live="polite"></span>
+    </div>
+    <div class="settings-container">
       <button id="run">Colorize!</button>
-      <button id="force-run">Force Colorize!</button>
+      <button id="force-run" title="Click an image on the current manga page to force-colorize it">Force Colorize!</button>
     </div>
   </div>
 </body>

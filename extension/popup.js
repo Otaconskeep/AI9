@@ -1,3 +1,8 @@
+import {
+  attachLocalImageSelect,
+  dataUrlToObjectUrl,
+} from './localImageSelect.js';
+
 const urlInput = document.getElementById("url-input-field");
 const maxActiveFetches = document.getElementById("maxactivefetches-input-field");
 const showOriginalCheckbox = document.getElementById("showoriginal-checkbox");
@@ -17,8 +22,13 @@ const addSiteButton = document.getElementById("addsite");
 const runButton = document.getElementById("run");
 const testApiButton = document.getElementById("test-api");
 const forceRunButton = document.getElementById("force-run");
+const selectLocalImageButton = document.getElementById("select-local-image");
+const localImageInput = document.getElementById("local-image-input");
+const localImageStatus = document.getElementById("local-image-status");
 
 const DEFAULT_API_URL = "https://127.0.0.1:5000/";
+const FORCE_RUN_IDLE_LABEL = "Force Colorize!";
+const FORCE_RUN_ACTIVE_LABEL = "Click a page image…";
 
 browser.storage.local.get(["apiURL", "maxActiveFetches", "showOriginal", "showColorized", "cache", "denoise",
                 "colorize", "upscale", "denoiseSigma", "upscaleFactor",
@@ -141,20 +151,49 @@ runButton.addEventListener("click",() => {
     });
 })
 
+function resetForceRunButton() {
+    forceRunButton.textContent = FORCE_RUN_IDLE_LABEL;
+    forceRunButton.disabled = false;
+}
+
 forceRunButton.addEventListener('click', () => {
-    forceRunButton.textContent = "Select an Image";
-    forceRunButton.disabled = true
-    browser.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-        chrome.tabs.sendMessage(tabs[0].id, { action: "startSelectMode" });
+    // On-page image pick (manga reader). Not a local file picker — that is
+    // "Select an image" below. Keep labels distinct so users are not stuck on
+    // a disabled "Select an Image" button with no OS dialog.
+    forceRunButton.textContent = FORCE_RUN_ACTIVE_LABEL;
+    forceRunButton.disabled = true;
+    browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0] && tabs[0].id;
+        if (!tabId) {
+            resetForceRunButton();
+            return;
+        }
+        browser.tabs.sendMessage(tabId, { action: "startSelectMode" }).then(() => {
+            // Content script entered select mode; exitSelectMode resets the button.
+        }).catch((err) => {
+            console.error('[MC] Force Colorize failed (is the content script on this tab?):', err);
+            resetForceRunButton();
+            if (localImageStatus) {
+                localImageStatus.textContent =
+                    'Force Colorize needs an open manga page. Use “Select an image” for a local file.';
+            }
+        });
     });
 });
 
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "exitSelectMode") {
-        forceRunButton.textContent = "Force Colorize!";
-        forceRunButton.disabled = false
+        resetForceRunButton();
     }
 });
+
+function selectedUpscaleFactor() {
+    let selected = "4";
+    upscaleFactorSelector.forEach((radio) => {
+        if (radio.checked) selected = radio.value;
+    });
+    return selected;
+}
 
 showOriginalCheckbox.addEventListener('change', updateVisibility);
 showColorizedCheckbox.addEventListener('change', updateVisibility);
@@ -266,5 +305,48 @@ resetAdjustmentsButton.addEventListener('click', () => {
     const defaults = presetsData["Default"] || DEFAULT_ADJUSTMENTS;
     setSlidersFromValues(defaults);
     saveAdjustments(currentSliderValues(), "Default");
+});
+
+attachLocalImageSelect({
+    button: selectLocalImageButton,
+    fileInput: localImageInput,
+    statusEl: localImageStatus,
+    getSettings: () => ({
+        cache: cacheCheckbox.checked,
+        denoise: denoiseCheckbox.checked,
+        colorize: colorizeCheckbox.checked,
+        upscale: upscaleCheckbox.checked,
+        denoiseSigma: denoiseSigmaInput.value.trim(),
+        upscaleFactor: selectedUpscaleFactor(),
+        adjustments: currentSliderValues(),
+    }),
+    colorizeFn: async (postData) => {
+        const apiURL = (urlInput.value.trim() || DEFAULT_API_URL);
+        browser.storage.local.set({ apiURL });
+        const result = await browser.runtime.sendMessage({
+            action: 'colorizeImageData',
+            apiURL,
+            postData,
+        });
+        if (!result || !result.ok) {
+            const msg = (result && result.error) ? result.error : 'Colorize API failed';
+            const hint = (result && result.hint) ? ` ${result.hint}` : '';
+            throw new Error(String(msg) + hint);
+        }
+        return result.json;
+    },
+    openResultFn: async (colorImgData, fileName) => {
+        // Prefer a blob URL tab — data: URLs are often blocked by Firefox.
+        let objectUrl;
+        try {
+            objectUrl = dataUrlToObjectUrl(colorImgData);
+        } catch (e) {
+            objectUrl = colorImgData;
+        }
+        await browser.tabs.create({ url: objectUrl, active: true });
+        if (localImageStatus) {
+            localImageStatus.textContent = `Opened colorized ${fileName || 'image'}`;
+        }
+    },
 });
 

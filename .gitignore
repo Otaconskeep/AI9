@@ -21,3 +21,5 @@ backend/ssl/*.pem
 test-images/
 _ff_headless_profile/
 _tools/
+node_modules/
+package-lock.json
