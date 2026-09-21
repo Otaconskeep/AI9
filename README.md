@@ -378,6 +378,10 @@ re-bind to `0.0.0.0` casually.
    (`siteConfig.json` ships with `crunchyroll.com` plus the original
    upstream sites). If not, add it. This is a one-time step; the extension
    auto-injects into that domain from then on.
+5. To colorize a file from disk (no manga site required): click
+   **Select an image**, pick a PNG/JPG in the OS file picker, and wait for
+   the colorized result tab. **Force Colorize!** is separate — it lets you
+   click an image *on the current reader page*.
 
 ### 9. If your target site isn't behaving, probe its DOM first
 
