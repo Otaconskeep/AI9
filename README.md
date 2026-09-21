@@ -48,15 +48,23 @@ This GIF is a real capture of AI9 taking a black-and-white manga page through th
 
 **LOCAL GPU // HARDWARE-AWARE // SELF-HOSTED**
 
-## Install (the easy way)
+## Install (one-click or baby steps)
+
+**Canonical page:** [otaconskeep.github.io/ai9/#install](https://otaconskeep.github.io/ai9/#install)
+(one-click **and** beginner baby steps with clickable error fixes)
 
 **Requirements: Windows 10/11, an NVIDIA RTX 30/40/50-series GPU with its
 driver already installed. That's it, everything else gets installed for
-you.**
+you.** You do **not** need OtaconsKeep Lite.
 
-### Easiest path (recommended)
+| Method | Best for | What you do |
+|---|---|---|
+| **1 · One-click** | No terminal | Download Setup → double-click in Downloads |
+| **2 · Baby steps** | Prefer copy-paste | Prerequisites → one CMD line → load Firefox extension |
 
-1. Open [otaconskeep.com/ai9](https://otaconskeep.com/ai9/#install).
+### Method 1 · One-click (recommended)
+
+1. Open [otaconskeep.github.io/ai9](https://otaconskeep.github.io/ai9/#install).
 2. Click **Download AI9 Setup**.
 3. Open your Downloads folder and **double-click `AI9-Setup.bat`**.
    Do **not** type the filename into Command Prompt — that only works if
@@ -64,6 +72,32 @@ you.**
 
 The Setup file is a lone Downloads launcher: it fetches `install_ai9.sh`
 if needed, installs Git Bash when missing, then runs the real installer.
+
+### Method 2 · Baby steps (copy-paste)
+
+**Step 1 · Prerequisites:** Windows 10/11, NVIDIA driver (`nvidia-smi` works),
+winget/App Installer for Git/Python/Firefox if missing. Expandable help:
+[site Step 1](https://otaconskeep.github.io/ai9/#ai9page-prereqs).
+
+**Step 2 · Command Prompt one-liner:**
+
+```bat
+curl -L -o "%USERPROFILE%\Downloads\AI9-Setup.bat" "https://otaconskeep.github.io/downloads/AI9-Setup.bat" && start "" "%USERPROFILE%\Downloads\AI9-Setup.bat"
+```
+
+**PowerShell:**
+
+```powershell
+irm https://otaconskeep.github.io/downloads/AI9-Setup.bat -OutFile "$env:USERPROFILE\Downloads\AI9-Setup.bat"; Start-Process "$env:USERPROFILE\Downloads\AI9-Setup.bat"
+```
+
+**Step 2b · Firefox extension (required once):** open
+`about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
+select `C:\opt\manga-colorizer\extension\manifest.json`.
+
+**If you see an error:** clickable fixes on the
+[site error list](https://otaconskeep.github.io/ai9/#ai9page-errors)
+(`'AI9-Setup.bat' is not recognized`, SmartScreen, window flash-close, GPU test, etc.).
 
 ### From this repo (ZIP / clone)
 
