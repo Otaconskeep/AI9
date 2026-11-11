@@ -7,6 +7,7 @@
 [![Site](https://img.shields.io/badge/Site-otaconskeep.github.io-8db3d9.svg)](https://otaconskeep.github.io/ai9/)
 [![YouTube](https://img.shields.io/badge/Demo-YouTube-ff0000.svg)](https://youtu.be/aUiwMACSPBk)
 [![Discord](https://img.shields.io/badge/Discord-Otaconskeep-5865F2.svg)](https://discord.gg/cZDeqECzX)
+[![Otacon on StartupScores](https://startupscores.com/badge/otacon.svg?style=shield&v=combo&theme=dark)](https://startupscores.com/open-source/otacon)
 
 [![AI9 Manga Colorizer](https://img.youtube.com/vi/aUiwMACSPBk/maxresdefault.jpg)](https://youtu.be/aUiwMACSPBk)
 
